@@ -13,7 +13,7 @@
 # istore
 git clone --depth=1 https://github.com/linkease/istore  package/istore
 git clone --depth=1 https://github.com/linkease/nas-packages  package/nas
-git clone --depth=1 https://github.com/linkease/nas-packages-luci  package/nas-luci
+git clone --depth=1 https://github.com/linkease/nas-packages-luci  package/nas_luci
 
 # 科学插件
 git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall  package/passwall
