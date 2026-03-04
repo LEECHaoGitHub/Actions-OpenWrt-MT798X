@@ -59,7 +59,7 @@ if [ -f "$XCRYPT_MK" ]; then
     
     # 3. 额外保险：针对宿主机编译工具的补丁
     # 因为 gen-des-tables 是在你的电脑上跑的，有时候需要这一行
-    sed -i 's/HOST_CFLAGS[ \t]*+=[ \t]*/&-fcommon /' "$XCRYPT_MK" 2>/dev/null || true
+    # sed -i 's/HOST_CFLAGS[ \t]*+=[ \t]*/&-fcommon /' "$XCRYPT_MK" 2>/dev/null || true
 
     echo "✅ libxcrypt 参数注入完成。"
 fi
