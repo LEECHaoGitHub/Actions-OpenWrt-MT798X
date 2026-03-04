@@ -43,6 +43,8 @@ rm $WORKINGDIR/${LUCIBRANCH}.zip
 
 # 索引刷新 (强制重连血脉)
 echo ">>> [4/6] 强制刷新全系统索引..."
+rm -rf tmp
+# 物理删除旧链接，强迫重新生成
 ./scripts/feeds update -i
 ./scripts/feeds install -a -f
 
