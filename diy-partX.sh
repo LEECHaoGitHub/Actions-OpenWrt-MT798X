@@ -10,10 +10,24 @@
 # See /LICENSE for more information.
 #
 
-# istore
-git clone --depth=1 https://github.com/linkease/istore  package/istore
-git clone --depth=1 https://github.com/linkease/nas-packages  package/nas
-git clone --depth=1 https://github.com/linkease/nas-packages-luci  package/nas-luci
+# 1. 备份原始 feeds
+cp feeds.conf.default feeds.conf.default.bak
+
+# 2. NAS feeds
+echo >> feeds.conf.default
+echo 'src-git nas https://github.com/linkease/nas-packages.git;master' >> feeds.conf.default
+echo 'src-git nas_luci https://github.com/linkease/nas-packages-luci.git;main' >> feeds.conf.default
+
+./scripts/feeds update nas nas_luci
+./scripts/feeds install -a -p nas
+./scripts/feeds install -a -p nas_luci
+
+# 3. iStore feeds
+echo >> feeds.conf.default
+echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
+
+./scripts/feeds update istore
+./scripts/feeds install -d y -p istore luci-app-store
 
 # 科学插件
 # Passwall 
@@ -35,11 +49,14 @@ echo 'src-git helloworld https://github.com/fw876/helloworld.git' >> feeds.conf.
 echo 'src-git lucky https://github.com/gdy666/luci-app-lucky.git' >> feeds.conf.default
 # Openlist2 (可能是指 OpenList 或相关列表工具)
 echo 'src-git openlist2 https://github.com/sbwml/luci-app-openlist2.git' >> feeds.conf.default
+
 # Sirpdboy 的插件 (看门狗 & 计划任务)
 echo 'src-git watchdog https://github.com/sirpdboy/luci-app-watchdog.git' >> feeds.conf.default
 echo 'src-git taskplan https://github.com/sirpdboy/luci-app-taskplan.git' >> feeds.conf.default
 # Authshield (认证屏蔽/管理)
 echo 'src-git authshield https://github.com/iv7777/luci-app-authshield.git' >> feeds.conf.default
+
+# VPN
 # EasyTier (内网穿透组网)
 echo 'src-git easytier https://github.com/EasyTier/luci-app-easytier.git' >> feeds.conf.default
 # Tailscale Community (注意：改名为 tailscale_community 以防与官方 packages 里的 tailscale 混淆)
@@ -47,9 +64,16 @@ echo 'src-git tailscale_community https://github.com/Tokisaki-Galaxy/luci-app-ta
 # OWQ WOL (网络唤醒)
 echo 'src-git owq_wol https://github.com/isalikai/luci-app-owq-wol.git' >> feeds.conf.default
 
+mkdir -p package/custom
+
 # 主题
-git clone --depth=1 -b openwrt-25.12 https://github.com/sbwml/luci-theme-argon package/argon
-echo 'src-git aurora https://github.com/eamonxg/luci-theme-aurora.git' >> feeds.conf.default
-echo 'src-git aurora_config https://github.com/eamonxg/luci-app-aurora-config.git' >> feeds.conf.default
-echo 'src-git kucat https://github.com/sirpdboy/luci-theme-kucat.git' >> feeds.conf.default
-echo 'src-git kucat_config https://github.com/sirpdboy/luci-app-kucat-config.git' >> feeds.conf.default
+# Argon
+git clone --depth=1 -b openwrt-25.12 https://github.com/sbwml/luci-theme-argon.git package/custom/luci-theme-argon
+
+# Aurora
+git clone --depth=1 https://github.com/eamonxg/luci-theme-aurora.git package/custom/luci-theme-aurora
+git clone --depth=1 https://github.com/eamonxg/luci-app-aurora-config.git package/custom/luci-app-aurora-config
+
+# Kucat
+git clone --depth=1 https://github.com/sirpdboy/luci-theme-kucat.git package/custom/luci-theme-kucat
+git clone --depth=1 https://github.com/sirpdboy/luci-app-kucat-config.git package/custom/luci-app-kucat-config
