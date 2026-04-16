@@ -10,14 +10,8 @@
 # See /LICENSE for more information.
 #
 
-# 1. 创建临时配置文件
-cat <<EOF > /tmp/temp_feeds.conf
-src-git packages $CUSTOM_PACKAGES_URL
-src-git luci $CUSTOM_LUCI_URL
-EOF
-
-# 2. 通过环境变量指定配置路径
-export FEEDS_CONF=/tmp/temp_feeds.conf
+# 备份 feeds
+cp feeds.conf.default feeds.conf.default.bak
 
 # 科学插件
 # Passwall 
