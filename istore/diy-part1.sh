@@ -33,7 +33,7 @@ mkdir -p package/custom
 
 # 科学插件
 # Passwall
-git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages package/custom/passwall-packages
+# git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages package/custom/passwall-packages
 git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall package/custom/passwall
 git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall2 package/custom/passwall2
 
