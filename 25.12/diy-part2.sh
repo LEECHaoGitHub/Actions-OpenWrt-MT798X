@@ -72,24 +72,13 @@ if [ -n "$OPENLIST2_DIR" ]; then
 fi
 
 #修复Rust编译失败
-RUST_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/rust/Makefile")
-if [ -f "$RUST_FILE" ]; then
-	echo " "
+RUST_FILE=$(find ../feeds/packages -path "*/lang/rust/Makefile" | head -n 1)
 
-	sed -i 's/ci-llvm=true/ci-llvm=false/g' $RUST_FILE
-
-	cd $PKG_PATH && echo "rust has been fixed!"
+if [ -n "$RUST_FILE" ] && [ -f "$RUST_FILE" ]; then
+    sed -i 's/ci-llvm=true/ci-llvm=false/g' "$RUST_FILE"
+    echo "Rust local LLVM build enabled!"
 fi
 
 # 修改默认 IP (192.168.30.1)
-sed -i 's/192.168.1.1/192.168.30.1/g' package/base-files/files/bin/config_generate
-
-# 恢复 feeds.conf.default
-if [ -f feeds.conf.default.bak ]; then
-    mv feeds.conf.default.bak feeds.conf.default
-fi
-
-# 防止存在 feeds.conf 覆盖
-rm -f feeds.conf
-
+sed -i 's/192.168.6.1/192.168.30.1/g' package/base-files/files/bin/config_generate
 echo "✅ SSH2 配置完成。"
