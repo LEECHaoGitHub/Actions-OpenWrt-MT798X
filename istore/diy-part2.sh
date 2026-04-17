@@ -14,10 +14,11 @@ echo "=========================================="
 # ---------------------------------------------------------
 TARGET_DIR="${1:-$(pwd)}"
 
-check_openwrt_root() {[ -f "$1/scripts/feeds" ] && [ -f "$1/Makefile" ]
+check_openwrt_root() {
+    [ -f "$1/scripts/feeds" ] &&[ -f "$1/Makefile" ]
 }
 
-if check_openwrt_root "$TARGET_DIR"; then
+if [ -n "$TARGET_DIR" ] && check_openwrt_root "$TARGET_DIR"; then
     OPENWRT_ROOT="$TARGET_DIR"
     echo "✅ 自动识别 OpenWrt 根目录: $OPENWRT_ROOT"
 else
@@ -35,6 +36,7 @@ fi
 # ---------------------------------------------------------
 # 2. QuickStart 首页温度显示修复
 # ---------------------------------------------------------
+
 echo ">>> 执行 QuickStart 修复..."
 # 获取 GitHub Workspace 根目录 (diy-part2.sh 在 openwrt/ 下运行)
 REPO_ROOT=$(dirname "$(readlink -f "$0")")/.. 
@@ -47,9 +49,9 @@ CUSTOM_LUA="$REPO_ROOT/istore/istore_backend.lua"
 # 查找目标文件 (feeds 和 package 都找)
 TARGET_LUA=$(find feeds package -name "istore_backend.lua" -type f 2>/dev/null | head -n 1)
 
-if[ -n "$TARGET_LUA" ]; then
+if [ -n "$TARGET_LUA" ]; then
     echo "定位到目标文件: $TARGET_LUA"
-    if[ -f "$CUSTOM_LUA" ]; then
+    if [ -f "$CUSTOM_LUA" ]; then
         echo "正在覆盖自定义文件..."
         cp -f "$CUSTOM_LUA" "$TARGET_LUA"
         if cmp -s "$CUSTOM_LUA" "$TARGET_LUA"; then
@@ -103,7 +105,7 @@ rm $WORKINGDIR/${LUCIBRANCH}.zip
 # ---------------------------------------------------------
 # DiskMan 依赖修复
 DM_MAKEFILE=$(find feeds/luci -name "Makefile" | grep "luci-app-diskman")
-if[ -f "$DM_MAKEFILE" ]; then
+if [ -f "$DM_MAKEFILE" ]; then
     sed -i '/ntfs-3g-utils /d' "$DM_MAKEFILE"
     echo "✅ DiskMan 依赖修复完成"
 fi
@@ -125,7 +127,6 @@ echo ">>> 调整插件菜单位置..."
 # 5.1 Tailscale -> VPN 
 TS_DIR=$(find feeds package -type d -name "luci-app-tailscale-community" 2>/dev/null | head -n 1)
 
-# 【修正】：补齐了 if 和 [ 之间的空格
 if [ -n "$TS_DIR" ]; then
     echo ">>> 发现 Tailscale 插件目录: $TS_DIR"
     find "$TS_DIR" -type f -name "*.json" -exec sed -i 's|admin/services/tailscale|admin/vpn/tailscale|g' {} +
@@ -133,7 +134,7 @@ if [ -n "$TS_DIR" ]; then
     echo "✅ Tailscale 菜单已移动到 VPN"
 else
     TS_FILES=$(grep -rl "admin/services/tailscale" package/feeds 2>/dev/null)
-    if[ -n "$TS_FILES" ]; then
+    if [ -n "$TS_FILES" ]; then
         echo "$TS_FILES" | xargs sed -i 's|admin/services/tailscale|admin/vpn/tailscale|g'
         echo "$TS_FILES" | xargs sed -i 's/"parent": "luci.services"/"parent": "luci.vpn"/g'
         echo "✅ Tailscale 菜单(全盘搜索模式)已移动"
@@ -150,7 +151,7 @@ fi
 
 # 5.3 OpenList2 -> NAS
 OPENLIST2_DIR=$(find feeds package -type d -name "luci-app-openlist2" | head -n 1)
-if [ -n "$OPENLIST2_DIR" ]; then
+if[ -n "$OPENLIST2_DIR" ]; then
     find "$OPENLIST2_DIR" -type f -exec sed -i 's|admin/services/openlist2|admin/nas/openlist2|g' {} +
     find "$OPENLIST2_DIR" -type f -exec sed -i 's/"parent": "luci.services"/"parent": "luci.nas"/g' {} +
     echo "✅ OpenList2 菜单已移动到 NAS"
@@ -162,6 +163,7 @@ fi
 RUST_FILE=$(find feeds/packages -path "*/lang/rust/Makefile" 2>/dev/null | head -n 1)
 
 if[ -n "$RUST_FILE" ] && [ -f "$RUST_FILE" ]; then
+    # 【极度重要】必须设为 if-unchanged 或 true 才能避免 Actions 爆磁盘/报错
     sed -i 's/download-ci-llvm:=.*/download-ci-llvm:="if-unchanged"/g' "$RUST_FILE"
     sed -i 's/download-ci-llvm=.*/download-ci-llvm="if-unchanged"/g' "$RUST_FILE"
     echo "✅ Rust CI-LLVM build enabled (Safe Mode)!"
@@ -176,8 +178,7 @@ find package feeds -name "Makefile" -path "*/daed/*" 2>/dev/null | xargs sed -i 
 echo "✅ 移除了 Daed 中的 vmlinux-btf 虚拟依赖。"
 
 for conf in target/linux/mediatek/filogic/config-*; do
-    # 【关键修正】：补齐了 if 和 [ 之间的空格！
-    if [ -f "$conf" ]; then
+    if[ -f "$conf" ]; then
         echo ">>> 正在为 $conf 注入 eBPF/TC 核心与极致性能配置..."
         
         echo "CONFIG_NET_SCHED=y" >> "$conf"
@@ -206,7 +207,7 @@ done
 # ---------------------------------------------------------
 # 8. 系统收尾工作
 # ---------------------------------------------------------
-# 修改默认 IP
+# 修改默认 IP (192.168.30.1)
 sed -i 's/192.168.6.1/192.168.30.1/g' package/base-files/files/bin/config_generate
 
 # 恢复 feeds.conf.default
