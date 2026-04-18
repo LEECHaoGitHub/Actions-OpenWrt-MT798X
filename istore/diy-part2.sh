@@ -164,7 +164,6 @@ echo ">>> [Kernel] 正在修复 eBPF/Daed 编译依赖..."
 
 # 强行打通内核 BPF 与 TC (Traffic Control) 前置依赖
 for conf in target/linux/mediatek/filogic/config-*; do
-    # 【关键修正】：if 和 [ 之间必须有空格！
     if [ -f "$conf" ]; then
         echo ">>> 正在为 $conf 注入 eBPF/TC 核心与极致性能配置..."
         
