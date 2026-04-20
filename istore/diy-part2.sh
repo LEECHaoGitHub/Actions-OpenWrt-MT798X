@@ -170,17 +170,34 @@ if [ -f "$RUST_FILE" ]; then
 	cd $PKG_PATH && echo "rust has been fixed!"
 fi
 
-# 额外添加 
+# 内核支持的额外添加 
 for conf in target/linux/mediatek/filogic/config-*; do
 cat >> $conf << 'EOF'
 
 # =========================================================
-# CPU 调度优化（修正）
+# CPU 调度优化
 # =========================================================
 
 CONFIG_PREEMPT_VOLUNTARY=y
 CONFIG_HZ_250=y
 CONFIG_SCHED_AUTOGROUP=y
+
+# =========================================================
+# Cgroup v2 完整支持
+# =========================================================
+
+CONFIG_CGROUPS=y
+CONFIG_CGROUP_BPF=y
+CONFIG_CGROUP_CPUACCT=y
+CONFIG_CGROUP_DEVICE=y
+CONFIG_CGROUP_FREEZER=y
+CONFIG_CGROUP_PIDS=y
+CONFIG_CGROUP_SCHED=y
+
+CONFIG_MEMCG=y
+CONFIG_MEMCG_SWAP=y
+
+CONFIG_SOCK_CGROUP_DATA=y
 
 # =========================================================
 # eBPF / Daed 核心
@@ -190,8 +207,6 @@ CONFIG_BPF=y
 CONFIG_BPF_SYSCALL=y
 CONFIG_BPF_JIT=y
 CONFIG_BPF_JIT_ALWAYS_ON=y
-CONFIG_CGROUP_BPF=y
-CONFIG_SOCK_CGROUP_DATA=y
 CONFIG_BPF_UNPRIV_DEFAULT_OFF=y
 
 # =========================================================
@@ -203,30 +218,6 @@ CONFIG_NET_CLS=y
 CONFIG_NET_CLS_ACT=y
 CONFIG_NET_ACT_BPF=m
 CONFIG_NET_CLS_BPF=m
-
-# =========================================================
-# Cgroup v2 完整支持（daed pname routing 必需）
-# =========================================================
-
-CONFIG_CGROUPS=y
-CONFIG_CGROUP_BPF=y
-CONFIG_CGROUP_CPUACCT=y
-CONFIG_CGROUP_DEVICE=y
-CONFIG_CGROUP_FREEZER=y
-CONFIG_CGROUP_PIDS=y
-CONFIG_CGROUP_SCHED=y
-
-# 内存控制器（重要！）
-CONFIG_MEMCG=y
-CONFIG_MEMCG_SWAP=y
-CONFIG_MEMCG_SWAP_ENABLED=y
-
-# Cgroup v2 控制器
-CONFIG_CGROUP_PERF=y
-CONFIG_CGROUP_RDMA=y
-
-# 确保 unified hierarchy (cgroup v2)
-CONFIG_CGROUP_UNIFIED_HIERARCHY=y
 
 # =========================================================
 # XDP / 高速数据路径
@@ -260,7 +251,7 @@ CONFIG_NET_FLOW_LIMIT=y
 CONFIG_TCP_FASTOPEN=y
 
 # =========================================================
-# MT7986 多核优化（关键！）
+# MT7986 多核优化
 # =========================================================
 
 CONFIG_RPS=y
