@@ -203,7 +203,6 @@ CONFIG_CGROUP_PIDS=y
 CONFIG_CGROUP_SCHED=y
 
 CONFIG_MEMCG=y
-CONFIG_MEMCG_SWAP=y
 
 CONFIG_SOCK_CGROUP_DATA=y
 
@@ -259,53 +258,49 @@ CONFIG_NET_FLOW_LIMIT=y
 CONFIG_TCP_FASTOPEN=y
 
 # =========================================================
+# MT7986 多核优化
+# =========================================================
+
+CONFIG_RPS=y
+CONFIG_RFS_ACCEL=y
+CONFIG_XPS=y
+
+# =========================================================
 # TCP 优化
 # =========================================================
 
 CONFIG_TCP_CONG_BBR=y
-CONFIG_DEFAULT_BBR=y
 CONFIG_DEFAULT_TCP_CONG="bbr"
+CONFIG_TCP_CONG_WESTWOOD=y
+CONFIG_TCP_CONG_HTCP=y
+CONFIG_TCP_MD5SIG=y
+CONFIG_SYN_COOKIES=y
+
+# =========================================================
+# Conntrack 优化
+# =========================================================
+
+CONFIG_NF_CONNTRACK_EVENTS=y
+CONFIG_NF_CONNTRACK_TIMESTAMP=y
+CONFIG_NF_CONNTRACK_LABELS=y
+CONFIG_NF_CT_NETLINK=y
+CONFIG_NF_CT_NETLINK_HELPER=y
+
+# =========================================================
+# 硬件加密加速（MT7986）
+# =========================================================
+
+CONFIG_CRYPTO_DEV_SAFEXCEL=y
+CONFIG_CRYPTO_HW=y
+CONFIG_CRYPTO_AES=y
+CONFIG_CRYPTO_GCM=y
+CONFIG_CRYPTO_CHACHA20POLY1305=y
 
 # =========================================================
 # 高速包处理
 # =========================================================
 
 CONFIG_GRO_CELLS=y
-
-# 提高连接跟踪表上限（默认太小）
-CONFIG_NF_CONNTRACK_EVENTS=y
-CONFIG_NF_CONNTRACK_TIMESTAMP=y
-CONFIG_NF_CONNTRACK_LABELS=y
-
-# SYN Cookie 防护（高并发下防 SYN Flood）
-CONFIG_SYN_COOKIES=y
-
-# TCP 窗口缩放
-CONFIG_TCP_CONG_WESTWOOD=y
-CONFIG_TCP_CONG_HTCP=y
-
-# 时间戳支持（RTT 计算更准确）
-CONFIG_TCP_MD5SIG=y
-
-# SLUB 分配器优化
-CONFIG_SLUB=y
-CONFIG_SLUB_CPU_PARTIAL=y
-
-# 增大 socket buffer
-CONFIG_NET_SCH_DEFAULT=y
-
-# Netfilter 高级功能
-CONFIG_NF_CT_NETLINK=y
-CONFIG_NF_CT_NETLINK_HELPER=y
-
-# 硬件加密引擎（MT7986 自带）
-CONFIG_CRYPTO_DEV_SAFEXCEL=y
-CONFIG_CRYPTO_HW=y
-
-# AES-NI 等指令集加速
-CONFIG_CRYPTO_AES=y
-CONFIG_CRYPTO_GCM=y
-CONFIG_CRYPTO_CHACHA20POLY1305=y
 
 EOF
 done
