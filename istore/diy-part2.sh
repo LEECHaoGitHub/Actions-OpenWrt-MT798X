@@ -191,7 +191,7 @@ CONFIG_HZ_250=y
 CONFIG_SCHED_AUTOGROUP=y
 
 # =========================================================
-# Cgroup v2 完整支持
+# Cgroup v2 完整支持（daed pname routing 必需）
 # =========================================================
 
 CONFIG_CGROUPS=y
@@ -305,8 +305,10 @@ CONFIG_GRO_CELLS=y
 EOF
 done
 
+echo "✅ 内核配置已优化"
+
 # =========================================================
-# Conntrack 表大小优化（写入 99-custom-network）
+# 5. Conntrack 表大小优化（写入 sysctl）
 # =========================================================
 mkdir -p files/etc/sysctl.d/
 
