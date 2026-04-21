@@ -32,6 +32,21 @@ if [ -f "$XCRYPT_MK" ]; then
     echo "✅ libxcrypt 参数注入完成。"
 fi
 
+# ==================== 修复 smartdns hash mismatch (25.12 专用) ====================
+echo "🔧 正在修复 smartdns 1.2025.47 hash mismatch..."
+
+sed -i 's|PKG_HASH:=34c85d914e01006439f5e1c9287ae96d6bfcc729ed4bcf386bf5948b938254f4|PKG_HASH:=5ef82ea81d5f627f52171e3b487331ecdd270554555cbff3d291590e19f4658d|' \
+    feeds/packages/net/smartdns/Makefile
+
+# 校验是否成功
+if grep -q "5ef82ea81d5f627f52171e3b487331ecdd270554555cbff3d291590e19f4658d" feeds/packages/net/smartdns/Makefile; then
+    echo "✅ smartdns hash 已成功更新为最新值（一次性生效）"
+else
+    echo "⚠️  hash 替换失败！请检查 feeds/packages/net/smartdns/Makefile 是否存在"
+    exit 1
+fi
+# ==================== 修复结束 ====================
+
 # 5.1 Tailscale -> VPN 
 TS_DIR=$(find feeds package -type d -name "luci-app-tailscale-community" 2>/dev/null | head -n 1)
 
