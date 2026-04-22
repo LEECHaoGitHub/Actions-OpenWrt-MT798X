@@ -1,46 +1,135 @@
 #!/bin/bash
-# 替换 daed Makefile 为官方版本（源码编译，跳过前端本地构建）
-#
+# =========================================================
+# Daed 手动版本更新脚本 (CI稳定版)
+# =========================================================
 
 set -e
 
-echo ">>> 替换 daed Makefile 为官方版本"
+# =========================================================
+# 手动指定版本
+# =========================================================
+DAED_VER="1.27.0"
 
-DAED_DIR=$(find . -path "*/daed/daed" -type d 2>/dev/null | head -n 1)
+# =========================================================
+# 检查环境
+# =========================================================
+DAED_MK="feeds/packages/net/daed/Makefile"
 
-if [ -z "$DAED_DIR" ]; then
-    echo "❌ 未找到 daed 目录"
+if [ ! -f "$DAED_MK" ]; then
+    echo "❌ 找不到 ${DAED_MK}"
+    echo "请确认已执行 ./scripts/feeds update -a && install"
     exit 1
 fi
 
-echo ">>> daed 目录: $DAED_DIR"
+OLD_VER=$(grep '^PKG_VERSION:=' "$DAED_MK" | cut -d= -f2)
 
-# 验证 files 目录
-if [ ! -f "$DAED_DIR/files/daed.init" ] || [ ! -f "$DAED_DIR/files/daed.config" ]; then
-    echo "❌ 缺少 files/daed.init 或 files/daed.config"
+echo "========================================="
+echo " Daed 更新"
+echo "========================================="
+echo "旧版本: ${OLD_VER}"
+echo "新版本: ${DAED_VER}"
+echo "========================================="
+
+# =========================================================
+# 检查版本是否存在
+# =========================================================
+echo ">>> 检查 GitHub release..."
+
+RELEASE_URL="https://github.com/daeuniverse/daed/releases/tag/v${DAED_VER}"
+
+HTTP_CODE=$(curl -sL -o /dev/null -w '%{http_code}' "$RELEASE_URL")
+
+if [ "$HTTP_CODE" != "200" ]; then
+    echo "❌ 版本不存在"
+    echo "$RELEASE_URL"
     exit 1
 fi
 
-# 直接从 ImmortalWrt 拉取官方 Makefile
-curl -fsSL \
-    "https://raw.githubusercontent.com/immortalwrt/packages/master/net/daed/Makefile" \
-    -o "$DAED_DIR/Makefile"
+echo "✓ Release 存在"
 
-# 修正 golang include 路径
-sed -i 's|include ../../lang/golang/golang-package.mk|include $(TOPDIR)/feeds/packages/lang/golang/golang-package.mk|' \
-    "$DAED_DIR/Makefile"
+# =========================================================
+# 修改 Makefile 版本
+# =========================================================
+echo ">>> 修改 Makefile"
 
-# 合并 geoip/geosite 到主依赖（luci-app-daed 只依赖 +daed）
-sed -i 's|+kmod-veth$|+kmod-veth +v2ray-geoip +v2ray-geosite|' \
-    "$DAED_DIR/Makefile"
+sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=${DAED_VER}/" "$DAED_MK"
+sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$DAED_MK"
+sed -i '/define Download\/daed-web/,/endef/{s/HASH:=.*/HASH:=skip/}' "$DAED_MK"
 
-# HASH 设为 skip（避免版本更新后校验失败）
-sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$DAED_DIR/Makefile"
-sed -i '/^[[:space:]]*HASH:=/s/HASH:=.*/HASH:=skip/' "$DAED_DIR/Makefile"
+echo "✓ 版本更新完成"
 
-echo "✅ 官方 Makefile 已替换并适配"
+# =========================================================
+# 下载 web.zip
+# =========================================================
+echo ">>> 下载 Web UI"
+
+TMP_DIR=$(mktemp -d)
+
+WEB_URL="https://github.com/daeuniverse/daed/releases/download/v${DAED_VER}/web.zip"
+
+curl -fSL --progress-bar -o "$TMP_DIR/web.zip" "$WEB_URL"
+
+WEB_HASH=$(sha256sum "$TMP_DIR/web.zip" | awk '{print $1}')
+
+echo "web hash:"
+echo "$WEB_HASH"
+
+rm -rf "$TMP_DIR"
+
+# =========================================================
+# 下载源码
+# =========================================================
+echo ">>> 下载源码"
+
+rm -f dl/daed-* || true
+
+make package/daed/download V=s
+
+SRC_FILE=$(find dl/ -name "daed-${DAED_VER}*" | head -1)
+
+if [ ! -f "$SRC_FILE" ]; then
+    echo "❌ 源码下载失败"
+    exit 1
+fi
+
+SRC_HASH=$(sha256sum "$SRC_FILE" | awk '{print $1}')
+
+echo "源码 hash:"
+echo "$SRC_HASH"
+
+# =========================================================
+# 回填 hash
+# =========================================================
+echo ">>> 回填 hash"
+
+sed -i "s/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=${SRC_HASH}/" "$DAED_MK"
+sed -i "/define Download\/daed-web/,/endef/{s/HASH:=.*/HASH:=${WEB_HASH}/}" "$DAED_MK"
+
+echo "✓ Hash 更新完成"
+
+# =========================================================
+# 验证下载
+# =========================================================
+echo ">>> 校验源码完整性"
+
+CALC_HASH=$(sha256sum "$SRC_FILE" | awk '{print $1}')
+
+if [ "$CALC_HASH" != "$SRC_HASH" ]; then
+    echo "❌ hash 不一致"
+    exit 1
+fi
+
+echo "✓ Hash 校验通过"
+
 echo ""
-echo "   修改项："
-echo "   ├── golang 路径适配 package/custom/"
-echo "   ├── geoip/geosite 合并到主依赖"
-echo "   └── HASH 校验跳过"
+echo "========================================="
+echo "最终 Makefile 字段"
+echo "========================================="
+
+grep PKG_VERSION "$DAED_MK"
+grep PKG_MIRROR_HASH "$DAED_MK"
+
+grep -A4 "define Download/daed-web" "$DAED_MK" | grep HASH
+
+echo "========================================="
+echo "Daed 更新完成"
