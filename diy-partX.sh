@@ -75,7 +75,7 @@ grep -A4 "define Download/daed-web" "$DAED_MK" | grep HASH
 
 
 # ---------------------------------------------------------
-# 关闭 OpenClash 编译 Rust 
+# 双重保险：终结 OpenClash 带来的 Rust 漫长编译噩梦
 # ---------------------------------------------------------
 echo ">>> 开始执行双重拦截：关闭 Ruby YJIT，跳过 rust/host 编译..."
 
@@ -94,12 +94,13 @@ for conf in .config *.config; do
 done
 
 # ==========================================
-# 修改底层 Makefile，物理取消依赖引擎
+# 方案 B：修改底层 Makefile，物理斩断依赖引擎
 # ==========================================
 RUBY_MK=$(find feeds -name "Makefile" -path "*/lang/ruby/Makefile" 2>/dev/null | head -n 1)
 
-if[ -f "$RUBY_MK" ]; then
-    echo ">>> 正在魔改 Ruby Makefile，执行..."
+# 修复：if 和 [ 之间必须有空格！
+if [ -f "$RUBY_MK" ]; then
+    echo ">>> 正在魔改 Ruby Makefile，执行物理级依赖阉割..."
     
     # 1. 破坏默认开启判定 (把大闪存默认开启改为默认关闭)
     sed -i 's/default y if !SMALL_FLASH/default n/g' "$RUBY_MK"
