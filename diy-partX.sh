@@ -98,14 +98,13 @@ done
 # ==========================================
 RUBY_MK=$(find feeds -name "Makefile" -path "*/lang/ruby/Makefile" 2>/dev/null | head -n 1)
 
-# 修复：if 和 [ 之间必须有空格！
 if [ -f "$RUBY_MK" ]; then
     echo ">>> 正在魔改 Ruby Makefile，执行物理级依赖阉割..."
     
-    # 1. 破坏默认开启判定 (把大闪存默认开启改为默认关闭)
-    sed -i 's/default y if !SMALL_FLASH/default n/g' "$RUBY_MK"
+    # 1. 防弹级正则破坏：在 config RUBY_ENABLE_YJIT 和 help 之间，将 default y 强制改为 default n
+    sed -i '/config RUBY_ENABLE_YJIT/,/help/{s/default y.*/default n/g}' "$RUBY_MK"
     
-    # 2. 釜底抽薪：暴力删掉引发 Rust 编译的触发关键词！
+    # 2. 釜底抽薪：精准删掉引发 Rust 编译的宿主机依赖关键词
     sed -i 's/RUBY_ENABLE_YJIT:rust\/host//g' "$RUBY_MK"
     
     echo "✅ 方案 B 成功：Ruby 对 Rust 的依赖链已被彻底斩断！"
@@ -113,4 +112,4 @@ else
     echo "⚠️ 警告: 未找到 Ruby 的 Makefile，可能路径有变，方案 B 跳过。"
 fi
 
-echo "🎉 双重拦截部署完毕！带有 OpenClash 的固件编译将重回极速！"
+echo "🎉 双重拦截部署完毕！"
