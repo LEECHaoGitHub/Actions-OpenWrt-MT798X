@@ -14,6 +14,9 @@ env:
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
 
+  # 强制 JavaScript Action 使用 Node.js 24，避免 Node 20 弃用警告
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   repository_dispatch:
   workflow_dispatch:
@@ -38,7 +41,7 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     # =========================================================
     # 1. 释放空间 + 初始化编译环境
@@ -171,7 +174,7 @@ jobs:
     # 5.7 恢复 Toolchain —— 第一优先: actions/cache
     # =========================================================
     - name: Restore toolchain from actions/cache
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       id: cache-restore
       with:
         path: |
@@ -289,7 +292,7 @@ jobs:
     # - 从 Release 恢复后也保存
     # =========================================================
     - name: Save toolchain to actions/cache
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v5
       if: steps.toolchain.outputs.need_save_cache == 'true'
       with:
         path: |
@@ -407,7 +410,7 @@ jobs:
     # 9. 上传 bin 目录（Artifacts）
     # =========================================================
     - name: Upload bin directory
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
       with:
         name: OpenWrt_bin_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
@@ -426,7 +429,7 @@ jobs:
         echo "status=success" >> "$GITHUB_OUTPUT"
 
     - name: Upload firmware directory
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
         name: OpenWrt_firmware_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
