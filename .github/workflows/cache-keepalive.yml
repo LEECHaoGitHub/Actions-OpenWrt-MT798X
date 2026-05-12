@@ -1,0 +1,20 @@
+name: Keep Toolchain Cache Alive
+
+on:
+  schedule:
+    - cron: '0 0 */5 * *'   # 每5天运行一次
+  workflow_dispatch:          # 支持手动触发
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Touch all toolchain caches
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/dummy
+          key: toolchain-
+          lookup-only: true   # 只检查不下载，几秒完成
