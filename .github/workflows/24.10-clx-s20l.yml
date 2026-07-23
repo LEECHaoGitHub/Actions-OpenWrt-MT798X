@@ -2,6 +2,7 @@ name: 24.10-clx-s20l
 
 env:
   DEVICE_NAME: 24.10-clx-s20l
+  # REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
   # REPO_URL: https://github.com/dailook/immortalwrt-mt798x-6.6
   REPO_URL: https://github.com/Yuzhii0718/immortalwrt-mt798x-6.6-padavanonly
   REPO_BRANCH: openwrt-24.10-6.6
