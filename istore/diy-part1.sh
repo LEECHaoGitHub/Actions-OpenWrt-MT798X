@@ -33,13 +33,20 @@ git clone --depth=1 -b master https://github.com/vernesong/OpenClash.git package
 
 # Nikki / Momo
 git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-nikki.git package/custom/nikki
+
+git clone --depth=1 https://github.com/CHKayanami/OpenWrt-nikki-rs.git package/custom/nikki-rs
+
 git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-momo.git package/custom/momo
 
 # Daed
+git clone --depth=1 https://github.com/QiuSimons/luci-app-honk.git package/custom/daed-honk
+
 git clone --depth=1 -b kix https://github.com/QiuSimons/luci-app-daed.git package/custom/daed
 # git clone --depth=1 -b master https://github.com/QiuSimons/luci-app-daed.git package/custom/daed
 # 添加 vmlinux-btf 模块
 git clone --depth=1 https://github.com/QiuSimons/vmlinux-btf.git package/custom/vmlinux-btf
+
+git clone --depth=1 https://github.com/kenzok8/openwrt-daede.git package/custom/daede
 
 # SSR+
 git clone --depth=1 https://github.com/fw876/helloworld.git package/custom/ssrp
