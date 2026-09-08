@@ -72,14 +72,14 @@ rm -rf feeds/packages/lang/golang
 git clone https://github.com/sbwml/packages_lang_golang -b 26.x feeds/packages/lang/golang
 
 # 升级替换 smartdns
-WORKINGDIR="`pwd`/feeds/packages/net/smartdns"
-mkdir $WORKINGDIR -p
-rm $WORKINGDIR/* -fr
-wget https://github.com/pymumu/openwrt-smartdns/archive/master.zip -O $WORKINGDIR/master.zip
-unzip $WORKINGDIR/master.zip -d $WORKINGDIR
-mv $WORKINGDIR/openwrt-smartdns-master/* $WORKINGDIR/
-rmdir $WORKINGDIR/openwrt-smartdns-master
-rm $WORKINGDIR/master.zip
+# WORKINGDIR="`pwd`/feeds/packages/net/smartdns"
+# mkdir $WORKINGDIR -p
+# rm $WORKINGDIR/* -fr
+# wget https://github.com/pymumu/openwrt-smartdns/archive/master.zip -O $WORKINGDIR/master.zip
+# unzip $WORKINGDIR/master.zip -d $WORKINGDIR
+# mv $WORKINGDIR/openwrt-smartdns-master/* $WORKINGDIR/
+# rmdir $WORKINGDIR/openwrt-smartdns-master
+# rm $WORKINGDIR/master.zip
 
 LUCIBRANCH="master" #更换此变量
 WORKINGDIR="`pwd`/feeds/luci/applications/luci-app-smartdns"
