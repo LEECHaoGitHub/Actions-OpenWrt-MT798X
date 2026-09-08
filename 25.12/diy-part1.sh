@@ -81,15 +81,15 @@ git clone https://github.com/sbwml/packages_lang_golang -b 26.x feeds/packages/l
 # rmdir $WORKINGDIR/openwrt-smartdns-master
 # rm $WORKINGDIR/master.zip
 
-LUCIBRANCH="master" #更换此变量
-WORKINGDIR="`pwd`/feeds/luci/applications/luci-app-smartdns"
-mkdir $WORKINGDIR -p
-rm $WORKINGDIR/* -fr
-wget https://github.com/pymumu/luci-app-smartdns/archive/${LUCIBRANCH}.zip -O $WORKINGDIR/${LUCIBRANCH}.zip
-unzip $WORKINGDIR/${LUCIBRANCH}.zip -d $WORKINGDIR
-mv $WORKINGDIR/luci-app-smartdns-${LUCIBRANCH}/* $WORKINGDIR/
-rmdir $WORKINGDIR/luci-app-smartdns-${LUCIBRANCH}
-rm $WORKINGDIR/${LUCIBRANCH}.zip
+# LUCIBRANCH="master" #更换此变量
+# WORKINGDIR="`pwd`/feeds/luci/applications/luci-app-smartdns"
+# mkdir $WORKINGDIR -p
+# rm $WORKINGDIR/* -fr
+# wget https://github.com/pymumu/luci-app-smartdns/archive/${LUCIBRANCH}.zip -O $WORKINGDIR/${LUCIBRANCH}.zip
+# unzip $WORKINGDIR/${LUCIBRANCH}.zip -d $WORKINGDIR
+# mv $WORKINGDIR/luci-app-smartdns-${LUCIBRANCH}/* $WORKINGDIR/
+# rmdir $WORKINGDIR/luci-app-smartdns-${LUCIBRANCH}
+# rm $WORKINGDIR/${LUCIBRANCH}.zip
 
 # VPN
 git clone --depth=1 https://github.com/EasyTier/luci-app-easytier.git package/custom/easytier
