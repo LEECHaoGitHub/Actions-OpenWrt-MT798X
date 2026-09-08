@@ -69,6 +69,8 @@ jobs:
         sudo -E apt-get -yqq full-upgrade
 
         # 安装 eBPF / daed / Honk 编译依赖
+        # 安装 pnpm（daed 前端构建需要）
+        sudo npm install -g pnpm
         sudo -E apt-get -yqq install \
           git curl jq patch gzip zstd binutils \
           clang llvm dwarves libbpf-dev libclang-dev \
@@ -79,9 +81,6 @@ jobs:
 
         # 安装 ImmortalWrt 官方编译依赖
         sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
-
-        # 安装 pnpm（daed 前端构建需要）
-        sudo npm install -g pnpm
 
         # 清理
         sudo -E apt-get -yqq autoremove --purge
