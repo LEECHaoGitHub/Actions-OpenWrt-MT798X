@@ -67,11 +67,11 @@ jobs:
         sudo -E apt-get -yqq full-upgrade
 
         # 安装 eBPF / daed 编译依赖
+        # 安装 pnpm（daed 前端构建需要）
+        sudo npm install -g pnpm
         sudo -E apt-get -yqq install clang llvm dwarves build-essential \
           libssl-dev libelf-dev bc flex bison python3 xz-utils tar \
           dos2unix libfuse-dev
-        # 安装 pnpm（daed 前端构建需要）
-        sudo npm install -g pnpm
 
         # 安装 ImmortalWrt 官方编译依赖
         sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
