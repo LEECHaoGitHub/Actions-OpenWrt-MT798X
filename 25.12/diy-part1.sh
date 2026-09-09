@@ -14,8 +14,8 @@ mkdir -p package/custom
 
 # 科学插件
 # Passwall
-rm -rf feeds/packages/net/{xray-core,v2ray-geodata,sing-box,chinadns-ng,dns2socks,hysteria,ipt2socks,microsocks,naiveproxy,shadowsocks-libev,shadowsocks-rust,shadowsocksr-libev,simple-obfs,tcping,trojan-plus,tuic-client,v2ray-plugin,xray-plugin,geoview,shadow-tls}
-git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git package/custom/passwall-packages
+# rm -rf feeds/packages/net/{xray-core,v2ray-geodata,sing-box,chinadns-ng,dns2socks,hysteria,ipt2socks,microsocks,naiveproxy,shadowsocks-libev,shadowsocks-rust,shadowsocksr-libev,simple-obfs,tcping,trojan-plus,tuic-client,v2ray-plugin,xray-plugin,geoview,shadow-tls}
+# git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git package/custom/passwall-packages
 rm -rf feeds/luci/applications/luci-app-passwall
 git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall.git package/custom/passwall
 git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall2.git package/custom/passwall2
@@ -43,7 +43,7 @@ git clone --depth=1 https://github.com/QiuSimons/vmlinux-btf.git package/custom/
 git clone --depth=1 https://github.com/kenzok8/openwrt-daede.git package/custom/daede
 
 # SSR+
-git clone --depth=1 https://github.com/fw876/helloworld.git package/custom/ssrp
+# git clone --depth=1 https://github.com/fw876/helloworld.git package/custom/ssrp
 
 # 功能插件
 git clone --depth=1 https://github.com/Zerogiven-OpenWRT-Packages/luci-app-podman.git package/custom/podman
