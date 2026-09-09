@@ -43,7 +43,7 @@ git clone --depth=1 https://github.com/QiuSimons/vmlinux-btf.git package/custom/
 git clone --depth=1 https://github.com/kenzok8/openwrt-daede.git package/custom/daede
 
 # SSR+
-git clone --depth=1 https://github.com/fw876/helloworld.git package/custom/ssrp
+# git clone --depth=1 https://github.com/fw876/helloworld.git package/custom/ssrp
 
 # 功能插件
 git clone --depth=1 https://github.com/Zerogiven-OpenWRT-Packages/luci-app-podman.git package/custom/podman
