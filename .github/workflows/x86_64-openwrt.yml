@@ -1,10 +1,10 @@
-name: x86_64
+name: x86_64-openwrt
 
 env:
-  DEVICE_NAME: x86_64
-  REPO_URL: https://github.com/coolsnowwolf/lede
-  REPO_BRANCH: master
-  FEEDS_CONF: x86_64/feeds.conf.default
+  DEVICE_NAME: x86_64-openwrt
+  REPO_URL: https://github.com/openwrt/openwrt
+  REPO_BRANCH: main
+  FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: x86_64/x86_64.config
   DIY_P1_SH: x86_64/diy-part1.sh
   DIY_P2_SH: x86_64/diy-part2.sh
