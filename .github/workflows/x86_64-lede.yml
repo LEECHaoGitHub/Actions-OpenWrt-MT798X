@@ -1,7 +1,7 @@
 name: x86_64
 
 env:
-  DEVICE_NAME: x86_64
+  DEVICE_NAME: x86_64-lede
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
   FEEDS_CONF: x86_64/feeds.conf.default
