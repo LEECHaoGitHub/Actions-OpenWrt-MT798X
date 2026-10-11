@@ -1,4 +1,4 @@
-name: x86_64
+name: x86_64-lede
 
 env:
   DEVICE_NAME: x86_64-lede
