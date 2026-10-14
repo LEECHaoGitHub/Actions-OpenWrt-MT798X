@@ -1,9 +1,9 @@
-name: x86_64-openwrt
+name: x86_64-immortalwrt
 
 env:
-  DEVICE_NAME: x86_64-openwrt
-  REPO_URL: https://github.com/openwrt/openwrt
-  REPO_BRANCH: main
+  DEVICE_NAME: x86_64-immortalwrt
+  REPO_URL: https://github.com/immortalwrt/immortalwrt
+  REPO_BRANCH: openwrt-25.12
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: x86_64/x86_64.config
   DIY_P1_SH: x86_64/diy-part1.sh
