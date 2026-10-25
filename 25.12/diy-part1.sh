@@ -32,13 +32,9 @@ git clone --depth=1 https://github.com/CHKayanami/OpenWrt-nikki-rs.git package/c
 git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-momo.git package/custom/momo
 
 # Daed
-git clone --depth=1 https://github.com/QiuSimons/luci-app-honk.git package/custom/daed-honk
+git clone --depth=1 https://github.com/kenzok8/openwrt-honk.git package/custom/daed-honk
+# git clone --depth=1 https://github.com/QiuSimons/luci-app-honk.git package/custom/daed-honk
 # git clone --depth=1 https://github.com/breeze303/openwrt-honk.git package/custom/daed-honk
-
-git clone --depth=1 -b kix https://github.com/QiuSimons/luci-app-daed.git package/custom/daed
-# git clone --depth=1 -b master https://github.com/QiuSimons/luci-app-daed.git package/custom/daed
-# 添加 vmlinux-btf 模块
-git clone --depth=1 https://github.com/QiuSimons/vmlinux-btf.git package/custom/vmlinux-btf
 
 git clone --depth=1 https://github.com/kenzok8/openwrt-daede.git package/custom/daede
 
