@@ -18,6 +18,14 @@ if [ ! -f "$DEV_DIR/mt7981b-umi-uax3000e.dts" ]; then
 	echo "❌ 未找到设备树: $DEV_DIR/mt7981b-umi-uax3000e.dts"
 	exit 1
 fi
+if [ ! -d "$DTS_DST" ]; then
+	echo "❌ 未找到目录: $DTS_DST（上游可能已调整设备树路径）"
+	exit 1
+fi
+if [ ! -f "$IMG_MK" ]; then
+	echo "❌ 未找到 $IMG_MK（上游可能已调整镜像定义位置）"
+	exit 1
+fi
 cp -f "$DEV_DIR/mt7981b-umi-uax3000e.dts" "$DTS_DST/"
 echo "✅ 设备树已注入: $DTS_DST/mt7981b-umi-uax3000e.dts"
 
