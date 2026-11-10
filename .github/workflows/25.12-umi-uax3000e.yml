@@ -1,568 +1,518 @@
-name: 25.12-umi-uax3000e
-
-env:
-  DEVICE_NAME: 25.12-umi-uax3000e
-  REPO_URL: https://github.com/chasey-dev/immortalwrt-mt798x-rebase
-  REPO_BRANCH: 25.12
-  FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: 25.12/mt7981-25.12-umi-uax3000e.config
-  DIY_P1_SH: 25.12/diy-part1.sh
-  DIY_P2_SH: 25.12/diy-part2.sh
-  DIY_P3_SH: diy-partX.sh
-  UPLOAD_BIN_DIR: true
-  UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: true
-  TZ: Asia/Shanghai
-
-  # 强制 JavaScript Action 使用 Node.js 24，避免 Node 20 弃用警告
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
-  # Rust/cargo 网络容错：crates.io 的 HTTP/2 连接偶发中断时自动重试
-  # 本次失败即 “Error in the HTTP2 framing layer / download of aes-gcm-siv failed”
-  CARGO_HTTP_MULTIPLEXING: "false"
-  CARGO_NET_RETRY: "10"
-  CARGO_HTTP_TIMEOUT: "120"
-  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-
-on:
-  repository_dispatch:
-  workflow_dispatch:
-    inputs:
-      ssh:
-        description: 'SSH connection to Actions'
-        required: false
-        default: 'false'
-
-# =========================================================
-# 权限声明
-# 创建/上传/删除 Release、删除 workflow runs 必需
-# =========================================================
-permissions:
-  contents: write
-  actions: write
-
-jobs:
-  build:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 350
-
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v5
-
-    # =========================================================
-    # 1. 释放空间 + 初始化编译环境
-    # =========================================================
-    - name: Free disk space & init build environment
-      env:
-        DEBIAN_FRONTEND: noninteractive
-      run: |
-        # 删除大型预装软件
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-          /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/lib/jvm
-        sudo docker image prune --all --force
-
-        # 配置 12GB Swap（Rust/LLVM 编译需要大量虚拟内存）
-        sudo swapoff -a && sudo rm -f /mnt/swapfile
-        sudo fallocate -l 12G /mnt/swapfile
-        sudo chmod 600 /mnt/swapfile
-        sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
-
-        # 系统更新
-        sudo -E apt-get -yqq purge firefox snapd
-        sudo -E apt-get -yqq update
-        sudo -E apt-get -yqq full-upgrade
-
-        # 安装 eBPF / daed / Honk 编译依赖
-        # 安装 pnpm（daed 前端构建需要）
-        sudo npm install -g pnpm
-        sudo -E apt-get -yqq install \
-          git curl jq patch gzip zstd binutils \
-          clang llvm dwarves libbpf-dev libclang-dev \
-          pkg-config cmake lua5.4 ripgrep \
-          build-essential libssl-dev libelf-dev \
-          bc flex bison python3 xz-utils tar \
-          dos2unix libfuse-dev ca-certificates
-
-        # 安装 ImmortalWrt 官方编译依赖
-        sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
-
-        # 清理
-        sudo -E apt-get -yqq autoremove --purge
-        sudo -E apt-get -yqq clean
-        sudo -E timedatectl set-timezone "$TZ"
-
-        sudo mkdir -p /workdir
-        sudo chown "$USER":"$USER" /workdir
-
-        echo "磁盘空间:"
-        df -hT
-
-        echo "内存/Swap:"
-        free -h
-
-    # =========================================================
-    # 2. 克隆源码
-    # =========================================================
-    - name: Clone source code
-      working-directory: /workdir
-      run: |
-        df -hT "$PWD"
-        git clone "$REPO_URL" -b "$REPO_BRANCH" --single-branch --depth=1 openwrt
-        ln -sf /workdir/openwrt "$GITHUB_WORKSPACE/openwrt"
-
-    # =========================================================
-    # 3. 更新并安装 Feeds
-    # =========================================================
-    - name: Update & install feeds
-      run: |
-        cd openwrt
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a
-
-    # =========================================================
-    # 4. 加载自定义 Feeds
-    # =========================================================
-    - name: Load custom feeds (diy-part1.sh)
-      run: |
-        [ -e "$FEEDS_CONF" ] && cp "$FEEDS_CONF" openwrt/feeds.conf.default
-        chmod +x "$DIY_P1_SH"
-        cd openwrt
-        "$GITHUB_WORKSPACE/$DIY_P1_SH"
-
-    # =========================================================
-    # 4.5 注入 UMI UAX3000E 设备支持（25.12 源码默认没有该设备）
-    #     必须在 make defconfig 之前完成，否则设备符号会被丢弃
-    # =========================================================
-    - name: Add UMI UAX3000E device support
-      run: |
-        chmod +x "$GITHUB_WORKSPACE/25.12/umi-uax3000e/add-device.sh"
-        cd openwrt
-        "$GITHUB_WORKSPACE/25.12/umi-uax3000e/add-device.sh"
-
-    # =========================================================
-    # 5. 加载自定义配置 (diy-part2.sh)
-    # =========================================================
-    - name: Load custom configuration (diy-part2.sh)
-      run: |
-        [ -e files ] && cp -r files openwrt/files
-        [ -e "$CONFIG_FILE" ] && cp "$CONFIG_FILE" openwrt/.config
-        chmod +x "$DIY_P2_SH"
-        cd openwrt
-        "$GITHUB_WORKSPACE/$DIY_P2_SH"
-
-    # =========================================================
-    # 5.5 加载自定义配置 (diy-part3.sh)
-    # =========================================================
-    - name: Load custom configuration (diy-part3.sh)
-      run: |
-        [ -e "$CONFIG_FILE" ] && cp "$CONFIG_FILE" openwrt/.config
-        chmod +x "$DIY_P3_SH"
-        cd openwrt
-        "$GITHUB_WORKSPACE/$DIY_P3_SH"
-
-    # =========================================================
-    # 5.55 校验设备是否真的被选中（避免编译出错误机型固件）
-    # =========================================================
-    - name: Verify UMI UAX3000E device selected
-      run: |
-        cd openwrt
-        make defconfig > /dev/null 2>&1
-        if grep -q '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_umi_uax3000e=y' .config; then
-          echo "✅ 已选中设备: umi_uax3000e"
-        else
-          echo "❌ 未选中 umi_uax3000e，构建终止"
-          echo "----- 当前 .config 中的设备 -----"
-          grep '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_' .config || true
-          exit 1
-        fi
-
-    # =========================================================
-    # 5.6 生成 Toolchain 缓存 Key
-    # =========================================================
-    - name: Generate toolchain cache key
-      id: cache-key
-      run: |
-        cd openwrt
-        make defconfig 1>/dev/null 2>&1
-
-        # 提取目标平台
-        TARGET=$(grep '^CONFIG_TARGET_BOARD=' .config | cut -d'"' -f2)
-        SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | cut -d'"' -f2)
-
-        # 基于 tools/ 和 toolchain/ 源码生成 hash
-        TOOLS_HASH=$(find tools toolchain -type f \( -name "Makefile" -o -name "*.mk" \) \
-          -exec md5sum {} + 2>/dev/null | sort | md5sum | cut -d' ' -f1)
-
-        CACHE_KEY="toolchain-${TARGET}-${SUBTARGET}-${TOOLS_HASH:0:16}"
-        CACHE_PREFIX="toolchain-${TARGET}-${SUBTARGET}"
-
-        echo "CACHE_KEY=$CACHE_KEY" >> "$GITHUB_OUTPUT"
-        echo "CACHE_PREFIX=$CACHE_PREFIX" >> "$GITHUB_OUTPUT"
-
-        echo "========================================"
-        echo "🔑 缓存 Key: $CACHE_KEY"
-        echo "📌 缓存前缀: $CACHE_PREFIX"
-        echo "========================================"
-
-    # =========================================================
-    # 5.7 恢复 Toolchain —— 第一优先: actions/cache
-    # =========================================================
-    - name: Restore toolchain from actions/cache
-      uses: actions/cache/restore@v5
-      id: cache-restore
-      with:
-        path: |
-          /workdir/openwrt/staging_dir/host*
-          /workdir/openwrt/staging_dir/tool*
-        key: ${{ steps.cache-key.outputs.CACHE_KEY }}
-
-    # =========================================================
-    # 5.8 恢复 Toolchain —— 第二优先: Release 备份
-    # 精确匹配当前 CACHE_KEY.tzst，避免恢复旧工具链
-    # =========================================================
-    - name: Restore toolchain from Release backup
-      if: steps.cache-restore.outputs.cache-hit != 'true'
-      id: release-restore
-      continue-on-error: true
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        cd openwrt
-
-        CACHE_KEY="${{ steps.cache-key.outputs.CACHE_KEY }}"
-        ASSET_NAME="${CACHE_KEY}.tzst"
-
-        if ! gh release view toolchain-cache --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-          echo "restored=false" >> "$GITHUB_OUTPUT"
-          echo "⚠️ toolchain-cache Release 不存在，可能是首次运行"
-          exit 0
-        fi
-
-        if gh release view toolchain-cache \
-          --repo "$GITHUB_REPOSITORY" \
-          --json assets \
-          -q '.assets[].name' 2>/dev/null | grep -qx "$ASSET_NAME"; then
-
-          echo "📦 从 Release 下载工具链: $ASSET_NAME"
-          echo "📍 Release 仓库: $GITHUB_REPOSITORY"
-
-          gh release download toolchain-cache \
-            --repo "$GITHUB_REPOSITORY" \
-            -p "$ASSET_NAME" \
-            -D .
-
-          if [ -e "$ASSET_NAME" ]; then
-            echo "📂 解压工具链缓存..."
-            tar -I unzstd -xf "$ASSET_NAME" || tar -xf "$ASSET_NAME"
-            rm -f "$ASSET_NAME"
-
-            echo "restored=true" >> "$GITHUB_OUTPUT"
-            echo "✅ Release 备份恢复成功"
-          else
-            echo "restored=false" >> "$GITHUB_OUTPUT"
-            echo "❌ Release 下载失败，未找到文件: $ASSET_NAME"
-          fi
-        else
-          echo "restored=false" >> "$GITHUB_OUTPUT"
-          echo "⚠️ Release 中没有当前缓存文件: $ASSET_NAME"
-        fi
-
-    # =========================================================
-    # 5.9 处理 Toolchain
-    # - actions/cache 命中：跳过工具链编译，不保存缓存
-    # - Release 命中：跳过工具链编译，但重新写入 actions/cache
-    # - 全部未命中：编译工具链，同时保存 actions/cache 和 Release
-    # =========================================================
-    - name: Handle toolchain
-      id: toolchain
-      run: |
-        cd openwrt
-
-        CACHE_HIT="${{ steps.cache-restore.outputs.cache-hit }}"
-        RELEASE_HIT="${{ steps.release-restore.outputs.restored }}"
-
-        if [ "$CACHE_HIT" = "true" ]; then
-          echo "✅ actions/cache 命中，工具链已恢复"
-          echo "need_build=false" >> "$GITHUB_OUTPUT"
-          echo "need_save_cache=false" >> "$GITHUB_OUTPUT"
-          echo "need_save_release=false" >> "$GITHUB_OUTPUT"
-
-        elif [ "$RELEASE_HIT" = "true" ]; then
-          echo "✅ Release 工具链缓存命中"
-          echo "📌 将重新写入 actions/cache，加速下次构建"
-          echo "need_build=false" >> "$GITHUB_OUTPUT"
-          echo "need_save_cache=true" >> "$GITHUB_OUTPUT"
-          echo "need_save_release=false" >> "$GITHUB_OUTPUT"
-
-        else
-          echo "=========================================="
-          echo "⏳ 无可用缓存，开始编译工具链..."
-          echo "=========================================="
-
-          make tools/install -j"$(nproc)" || make tools/install -j1 V=s || {
-            echo "❌ tools 编译失败"
-            exit 1
-          }
-          echo "✅ tools 编译完成"
-
-          make toolchain/install -j"$(nproc)" || make toolchain/install -j1 V=s || {
-            echo "❌ toolchain 编译失败"
-            exit 1
-          }
-          echo "✅ toolchain 编译完成"
-
-          echo "need_build=true" >> "$GITHUB_OUTPUT"
-          echo "need_save_cache=true" >> "$GITHUB_OUTPUT"
-          echo "need_save_release=true" >> "$GITHUB_OUTPUT"
-        fi
-
-        # 修改 Makefile，确保后续 make 跳过工具链重编
-        sed -i 's/ $(tool.*\/stamp-compile)//' Makefile
-        echo "📌 Makefile 已修改，后续编译将跳过工具链"
-
-    # =========================================================
-    # 5.10 保存 Toolchain 到 actions/cache
-    # - 首次编译后保存
-    # - 从 Release 恢复后也保存
-    # =========================================================
-    - name: Save toolchain to actions/cache
-      uses: actions/cache/save@v5
-      if: steps.toolchain.outputs.need_save_cache == 'true'
-      with:
-        path: |
-          /workdir/openwrt/staging_dir/host*
-          /workdir/openwrt/staging_dir/tool*
-        key: ${{ steps.cache-key.outputs.CACHE_KEY }}
-
-    # =========================================================
-    # 5.11 保存 Toolchain 到 Release 备份
-    # 仅首次编译工具链时执行
-    # =========================================================
-    - name: Save toolchain to Release backup
-      if: steps.toolchain.outputs.need_save_release == 'true'
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        cd openwrt
-
-        CACHE_KEY="${{ steps.cache-key.outputs.CACHE_KEY }}"
-        CACHE_PREFIX="${{ steps.cache-key.outputs.CACHE_PREFIX }}"
-
-        echo "📦 打包工具链..."
-        tar -I zstdmt -cf "${CACHE_KEY}.tzst" staging_dir/host* staging_dir/tool*
-        ls -lh "${CACHE_KEY}.tzst"
-
-        echo "📍 Release 目标仓库: $GITHUB_REPOSITORY"
-
-        if ! gh release view toolchain-cache --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-          echo "📝 创建 toolchain-cache Release..."
-          gh release create toolchain-cache \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Toolchain Cache" \
-            --notes "自动生成的工具链缓存，请勿手动删除" \
-            --latest=false
-        fi
-
-        # 删除同平台旧缓存，避免 Release 越积越多
-        gh release view toolchain-cache \
-          --repo "$GITHUB_REPOSITORY" \
-          --json assets \
-          -q '.assets[].name' 2>/dev/null | \
-          grep "^${CACHE_PREFIX}" | while read -r old_file; do
-            echo "🗑️ 删除旧缓存: $old_file"
-            gh release delete-asset toolchain-cache "$old_file" \
-              --repo "$GITHUB_REPOSITORY" \
-              -y 2>/dev/null || true
-          done
-
-        echo "📤 上传到 Release..."
-        gh release upload toolchain-cache "${CACHE_KEY}.tzst" \
-          --repo "$GITHUB_REPOSITORY" \
-          --clobber
-
-        rm -f "${CACHE_KEY}.tzst"
-        echo "✅ 工具链已备份到 Release"
-
-    # =========================================================
-    # 6. SSH 调试（可选）
-    # =========================================================
-    - name: SSH connection to Actions
-      uses: mxschmitt/action-tmate@v3
-      if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh != 'false') || contains(github.event.action, 'ssh')
-
-    # =========================================================
-    # 7. 下载软件包
-    # =========================================================
-    - name: Download packages
-      id: package
-      run: |
-        cd openwrt
-        make defconfig
-        make download -j8 || make download -j1 V=s
-        find dl -size -1024c -exec ls -l {} \;
-        find dl -size -1024c -exec rm -f {} \;
-
-    # =========================================================
-    # 8. 编译固件
-    # =========================================================
-    - name: Compile the firmware
-      id: compile
-      run: |
-        cd openwrt
-
-        echo "开始编译... ($(nproc) 线程)"
-        df -hT /
-
-        if make -j"$(nproc)"; then
-          echo "多线程编译成功"
-        else
-          echo "⚠️ 第一次编译失败，30 秒后重试（网络类错误通常可自愈）..."
-          sleep 30
-          if make -j1; then
-            echo "单线程编译成功"
-          else
-            echo "⚠️ 第二次编译失败，60 秒后再试一次..."
-            sleep 60
-            if make -j1 V=s; then
-              echo "单线程详细日志编译成功"
-            else
-              echo "编译失败"
-              exit 1
-            fi
-          fi
-        fi
-
-        echo "========================================"
-        echo "固件编译完成"
-        echo "最终磁盘空间:"
-        df -hT /
-        echo "========================================"
-
-        echo "status=success" >> "$GITHUB_OUTPUT"
-        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> "$GITHUB_ENV"
-
-    # =========================================================
-    # 8.5 空间检查
-    # =========================================================
-    - name: Check space usage
-      if: (!cancelled())
-      run: df -hT
-
-    # =========================================================
-    # 9. 上传 bin 目录（Artifacts）
-    # =========================================================
-    - name: Upload bin directory
-      uses: actions/upload-artifact@v5
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
-      with:
-        name: OpenWrt_bin_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: openwrt/bin
-
-    # =========================================================
-    # 10. 整理固件文件
-    # =========================================================
-    - name: Organize files
-      id: organize
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
-      run: |
-        cd openwrt/bin/targets/*/*
-        rm -rf packages
-
-        # 关键防呆：没有本机型的 sysupgrade 固件就绝不发布
-        # （此前编译失败后仍会执行到这里，把 bl2 等 .bin 当固件发到 Release）
-        IMG=$(ls -1 ./*umi_uax3000e*sysupgrade.bin 2>/dev/null | head -n 1)
-        if [ -z "$IMG" ]; then
-          echo "❌ 未找到 umi_uax3000e 的 sysupgrade 固件，终止发布"
-          ls -lh
-          exit 1
-        fi
-        echo "✅ 待发布固件: $IMG"
-
-        echo "FIRMWARE=$PWD" >> "$GITHUB_ENV"
-        echo "status=success" >> "$GITHUB_OUTPUT"
-
-    - name: Upload firmware directory
-      uses: actions/upload-artifact@v5
-      if: steps.organize.outputs.status == 'success' && !cancelled()
-      with:
-        name: OpenWrt_firmware_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: ${{ env.FIRMWARE }}
-
-    # =========================================================
-    # 11. 生成发布标签和日志
-    # =========================================================
-    - name: Generate release tag
-      id: tag
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
-      run: |
-        AUTHOR=$(echo "${{ env.REPO_URL }}" | cut -d'/' -f4)
-        DEVICE_NAME="${{ env.DEVICE_NAME }}"
-        BRANCH="${{ env.REPO_BRANCH }}"
-        BUILD_TIME=$(date +"%Y%m%d-%H%M")
-
-        RELEASE_TAG="${DEVICE_NAME}-${AUTHOR}-${BRANCH}-${BUILD_TIME}"
-        RELEASE_TAG=$(echo "$RELEASE_TAG" | sed 's/[^a-zA-Z0-9._-]/-/g')
-
-        echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
-
-        touch release.txt
-        echo "## 🚀 OpenWrt 自动编译固件" >> release.txt
-        echo "" >> release.txt
-        echo "### 📋 编译信息" >> release.txt
-        echo "| 项目 | 详情 |" >> release.txt
-        echo "|------|------|" >> release.txt
-        echo "| 📱 设备名称 | \`${DEVICE_NAME}\` |" >> release.txt
-        echo "| 👤 源码作者 | \`${AUTHOR}\` |" >> release.txt
-        echo "| 🔗 源码仓库 | ${{ env.REPO_URL }} |" >> release.txt
-        echo "| 🌿 分支版本 | \`${BRANCH}\` |" >> release.txt
-        echo "| ⏰ 编译时间 | $(date '+%Y-%m-%d %H:%M:%S') (Shanghai) |" >> release.txt
-        echo "| 🏷️ 版本标签 | \`${RELEASE_TAG}\` |" >> release.txt
-        echo "" >> release.txt
-        echo "---" >> release.txt
-        echo "> ⚠️ **注意**: 请根据自己的机型选择对应的 Factory 或 Sysupgrade 固件" >> release.txt
-
-        echo "status=success" >> "$GITHUB_OUTPUT"
-
-    # =========================================================
-    # 12. 发布到 GitHub Release
-    # =========================================================
-    - name: Upload firmware to release
-      uses: softprops/action-gh-release@v2.3.2
-      if: steps.tag.outputs.status == 'success' && !cancelled()
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.tag.outputs.release_tag }}
-        body_path: release.txt
-        # 只发布本机型的固件/校验文件，避免把 bl2 等无关 .bin 一起发出去
-        files: |
-          ${{ env.FIRMWARE }}/*umi_uax3000e*.bin
-          ${{ env.FIRMWARE }}/*umi_uax3000e*.manifest
-          ${{ env.FIRMWARE }}/*umi_uax3000e*.img.gz
-          ${{ env.FIRMWARE }}/*umi_uax3000e*.tar.gz
-
-    # =========================================================
-    # 13. 清理旧的工作流记录
-    # =========================================================
-    - name: Delete workflow runs
-      uses: Mattraks/delete-workflow-runs@v2
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        retain_days: 1
-        keep_minimum_runs: 10
-
-    # =========================================================
-    # 14. 清理旧的 Release 发布
-    # delete_tag_pattern 只删本设备固件 Release
-    # 不会误删 toolchain-cache
-    # =========================================================
-    - name: Remove old releases
-      uses: dev-drprasad/delete-older-releases@v0.3.4
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
-      with:
-        keep_latest: 10
-        delete_tags: true
-        delete_tag_pattern: '^${{ env.DEVICE_NAME }}-'
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+# ============================================================================
+#  mt7981-25.12-umi-uax3000e.config
+#
+#  设备   : UMI UAX3000E（eMMC 版）
+#  硬件   : MediaTek MT7981B / 1GB DDR3 / 128GB eMMC / USB3.0 / WiFi6 160MHz
+#  源码   : https://github.com/chasey-dev/immortalwrt-mt798x-rebase  分支 25.12
+#  参考   : 24.10/mt7981-umi-uax3000e.config
+#           25.12/mt7981-25.12.config
+#
+#  ⚠️ 重要：immortalwrt 25.12 源码本身不含 umi,uax3000e 设备。
+#     必须使用 .github/workflows/25.12-umi-uax3000e.yml（会自动调用
+#     25.12/umi-uax3000e/add-device.sh 注入 DTS 与设备定义），
+#     否则本配置里的设备符号会被 make defconfig 丢弃，编译出错误机型的固件。
+#
+#  修订   : 2026-11-10 v2
+#           - 关闭 4 个 Rust 组件（构建时 crates.io 下载失败，见 shadowsocks-rust/aes-gcm-siv）
+#           - SS/SS2022 改由 Passwall 自带的 SingBox（Go 实现）承担
+#
+#  固件产物：*sysupgrade.bin（sysupgrade-tar 格式）
+#     刷机方式：U-Boot 网页恢复（192.168.1.1）或原厂/不死 U-Boot 的升级页面
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# 目标平台 / 设备
+# ---------------------------------------------------------------------------
+CONFIG_TARGET_mediatek=y
+CONFIG_TARGET_mediatek_filogic=y
+CONFIG_TARGET_MULTI_PROFILE=y
+CONFIG_TARGET_PER_DEVICE_ROOTFS=y
+CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_umi_uax3000e=y
+CONFIG_TARGET_DEVICE_PACKAGES_mediatek_filogic_DEVICE_umi_uax3000e=""
+CONFIG_TARGET_ROOTFS_SQUASHFS=y
+
+# ---------------------------------------------------------------------------
+# 编译选项
+# ---------------------------------------------------------------------------
+CONFIG_DEVEL=y
+CONFIG_TOOLCHAINOPTS=y
+CONFIG_BUSYBOX_CUSTOM=y
+CONFIG_BUSYBOX_CONFIG_BLKID=y
+CONFIG_BUSYBOX_CONFIG_FEATURE_BLKID_TYPE=y
+CONFIG_BUSYBOX_CONFIG_VOLUMEID=y
+# CONFIG_GDB is not set
+CONFIG_INCLUDE_CONFIG=y
+CONFIG_JSON_OVERVIEW_IMAGE_INFO=y
+CONFIG_AFALG_UPDATE_CTR_IV=y
+# CONFIG_AFALG_FALLBACK is not set
+# CONFIG_PKG_CHECK_FORMAT_SECURITY is not set
+# CONFIG_PKG_FORTIFY_SOURCE_1 is not set
+CONFIG_PKG_FORTIFY_SOURCE_2=y
+# CONFIG_OPENSSL_ENGINE_BUILTIN is not set
+# CONFIG_OPENSSL_PREFER_CHACHA_OVER_GCM is not set
+CONFIG_OPENSSL_WITH_NPN=y
+# CONFIG_WOLFSSL_HAS_ECC25519 is not set
+
+# ---------------------------------------------------------------------------
+# 内核（25.12 / 6.12）：cgroup v2 + eBPF/BTF（daed、代理分流需要）
+# ---------------------------------------------------------------------------
+# CONFIG_KERNEL_BLK_DEV_THROTTLING is not set
+# CONFIG_KERNEL_CFS_BANDWIDTH is not set
+CONFIG_KERNEL_CGROUP_DEVICE=y
+CONFIG_KERNEL_CGROUP_FREEZER=y
+CONFIG_KERNEL_DEVMEM=y
+# CONFIG_KERNEL_KEYS is not set
+# CONFIG_KERNEL_MEMCG_SWAP is not set
+CONFIG_KERNEL_NET_CLS_CGROUP=y
+
+CONFIG_KERNEL_BPF=y
+CONFIG_KERNEL_BPF_SYSCALL=y
+CONFIG_KERNEL_BPF_EVENTS=y
+CONFIG_KERNEL_BPF_JIT=y
+CONFIG_KERNEL_BPF_JIT_ALWAYS_ON=y
+
+CONFIG_KERNEL_CGROUPS=y
+CONFIG_KERNEL_CGROUP_BPF=y
+CONFIG_KERNEL_CGROUP_CPUACCT=y
+CONFIG_KERNEL_CGROUP_PIDS=y
+CONFIG_KERNEL_MEMCG=y
+
+CONFIG_KERNEL_DEBUG_INFO=y
+CONFIG_KERNEL_DEBUG_INFO_REDUCED=n
+CONFIG_KERNEL_DEBUG_INFO_BTF=y
+
+CONFIG_KERNEL_XDP_SOCKETS=y
+CONFIG_KERNEL_TCP_FASTOPEN=y
+CONFIG_KERNEL_NET_NS=y
+
+# ---------------------------------------------------------------------------
+# MediaTek WiFi（mt_wifi 闭源驱动 + mt7981 20260601 固件）
+# ---------------------------------------------------------------------------
+CONFIG_CONNINFRA_AUTO_UP=y
+CONFIG_CONNINFRA_EMI_SUPPORT=y
+CONFIG_MTK_ACK_CTS_TIMEOUT_SUPPORT=y
+CONFIG_MTK_AIR_MONITOR=y
+CONFIG_MTK_AMPDU_CONF_SUPPORT=y
+CONFIG_MTK_ANTENNA_CONTROL_SUPPORT=y
+CONFIG_MTK_APCLI_SUPPORT=y
+CONFIG_MTK_ATE_SUPPORT=y
+CONFIG_MTK_BACKGROUND_SCAN_SUPPORT=y
+CONFIG_MTK_CAL_BIN_FILE_SUPPORT=y
+CONFIG_MTK_CFG_SUPPORT_FALCON_MURU=y
+CONFIG_MTK_CFG_SUPPORT_FALCON_PP=y
+CONFIG_MTK_CFG_SUPPORT_FALCON_SR=y
+CONFIG_MTK_CFG_SUPPORT_FALCON_TXCMD_DBG=y
+CONFIG_MTK_CHIP_MT7981=y
+CONFIG_MTK_CONNINFRA_APSOC=y
+CONFIG_MTK_CONNINFRA_APSOC_MT7981=y
+CONFIG_MTK_CON_WPS_SUPPORT=y
+CONFIG_MTK_DBDC_MODE=y
+CONFIG_MTK_DOT11K_RRM_SUPPORT=y
+CONFIG_MTK_DOT11R_FT_SUPPORT=y
+CONFIG_MTK_DOT11W_PMF_SUPPORT=y
+CONFIG_MTK_DOT11_HE_AX=y
+CONFIG_MTK_DOT11_N_SUPPORT=y
+CONFIG_MTK_DOT11_VHT_AC=y
+CONFIG_MTK_FAST_NAT_SUPPORT=y
+CONFIG_MTK_FIRST_IF_EEPROM_FLASH=y
+CONFIG_MTK_FIRST_IF_IPAILNA=y
+CONFIG_MTK_FIRST_IF_MT7981=y
+CONFIG_MTK_GREENAP_SUPPORT=y
+CONFIG_MTK_G_BAND_256QAM_SUPPORT=y
+CONFIG_MTK_HDR_TRANS_RX_SUPPORT=y
+CONFIG_MTK_HDR_TRANS_TX_SUPPORT=y
+CONFIG_MTK_ICAP_SUPPORT=y
+CONFIG_MTK_IGMP_SNOOP_SUPPORT=y
+CONFIG_MTK_INTERWORKING=y
+CONFIG_MTK_MAP_R2_VER_SUPPORT=y
+CONFIG_MTK_MAP_R3_VER_SUPPORT=y
+CONFIG_MTK_MAP_SUPPORT=y
+CONFIG_MTK_MBSS_DTIM_SUPPORT=y
+CONFIG_MTK_MBSS_SUPPORT=y
+CONFIG_MTK_MCAST_RATE_SPECIFIC=y
+CONFIG_MTK_MEMORY_SHRINK=y
+CONFIG_MTK_MEMORY_SHRINK_AGGRESS=y
+CONFIG_MTK_MGMT_TXPWR_CTRL=y
+CONFIG_MTK_MLME_MULTI_QUEUE_SUPPORT=y
+CONFIG_MTK_MT_AP_SUPPORT=m
+CONFIG_MTK_MT_DFS_SUPPORT=y
+CONFIG_MTK_MT_MAC=y
+CONFIG_MTK_MT_WIFI=m
+CONFIG_MTK_MT_WIFI_DRIVER_VERSION_7673=y
+CONFIG_MTK_MT_WIFI_FIRMWARE_PATH_MT7981="mt7981-fw-20260601"
+CONFIG_MTK_MT_WIFI_MT7981_20260601=y
+CONFIG_MTK_MT_WIFI_PATH="mt_wifi"
+CONFIG_MTK_MUMIMO_SUPPORT=y
+CONFIG_MTK_MU_RA_SUPPORT=y
+CONFIG_MTK_OFFCHANNEL_SCAN_FEATURE=y
+CONFIG_MTK_OWE_SUPPORT=y
+CONFIG_MTK_QOS_R1_SUPPORT=y
+CONFIG_MTK_RA_PHY_RATE_SUPPORT=y
+CONFIG_MTK_RED_SUPPORT=y
+CONFIG_MTK_RTMP_FLASH_SUPPORT=y
+CONFIG_MTK_RT_FIRST_CARD_EEPROM="flash"
+CONFIG_MTK_RT_FIRST_IF_RF_OFFSET=0xc0000
+CONFIG_MTK_SCS_FW_OFFLOAD=y
+CONFIG_MTK_SECOND_IF_NONE=y
+CONFIG_MTK_SMART_CARRIER_SENSE_SUPPORT=y
+CONFIG_MTK_SPECTRUM_SUPPORT=y
+CONFIG_MTK_SUPPORT_OPENWRT=y
+CONFIG_MTK_THIRD_IF_NONE=y
+CONFIG_MTK_TPC_SUPPORT=y
+CONFIG_MTK_TXBF_SUPPORT=y
+CONFIG_MTK_UAPSD=y
+CONFIG_MTK_VLAN_SUPPORT=y
+CONFIG_MTK_VOW_SUPPORT=y
+CONFIG_MTK_WARP_V2=y
+CONFIG_MTK_WDS_SUPPORT=y
+CONFIG_MTK_WHNAT_SUPPORT=m
+CONFIG_MTK_WIFI_BASIC_FUNC=y
+CONFIG_MTK_WIFI_DRIVER=y
+CONFIG_MTK_WIFI_EAP_FEATURE=y
+CONFIG_MTK_WIFI_FW_BIN_LOAD=y
+CONFIG_MTK_WIFI_MODE_AP=m
+CONFIG_MTK_WIFI_MT_MAC=y
+CONFIG_MTK_WIFI_TWT_SUPPORT=y
+CONFIG_MTK_WLAN_HOOK=y
+CONFIG_MTK_WLAN_SERVICE=y
+CONFIG_MTK_WNM_SUPPORT=y
+CONFIG_MTK_WPA3_SUPPORT=y
+CONFIG_MTK_WSC_INCLUDED=y
+CONFIG_MTK_WSC_V2_SUPPORT=y
+CONFIG_WARP_CHIPSET="mt7981"
+CONFIG_WARP_DBG_SUPPORT=y
+CONFIG_WARP_VERSION=2
+CONFIG_WED_HW_RRO_SUPPORT=y
+CONFIG_first_card=y
+CONFIG_first_card_name="MT7981"
+# CONFIG_MTK_BAND_STEERING is not set
+# CONFIG_MTK_DEFAULT_5G_PROFILE is not set
+# CONFIG_MTK_MAC_REPEATER_SUPPORT is not set
+# CONFIG_MTK_MULTI_PROFILE_SUPPORT is not set
+# CONFIG_MTK_PCIE_ASPM_DYM_CTRL_SUPPORT is not set
+# CONFIG_MTK_PRE_CAL_TRX_SET1_SUPPORT is not set
+# CONFIG_MTK_PRE_CAL_TRX_SET2_SUPPORT is not set
+# CONFIG_MTK_RLM_CAL_CACHE_SUPPORT is not set
+# CONFIG_MTK_SNIFFER_RADIOTAP_SUPPORT is not set
+
+# ---------------------------------------------------------------------------
+# 内核模块：有线/WiFi/加速基础
+# ---------------------------------------------------------------------------
+CONFIG_PACKAGE_kmod-ata-core=y
+CONFIG_PACKAGE_kmod-conninfra=y
+CONFIG_PACKAGE_kmod-crypto-acompress=y
+CONFIG_PACKAGE_kmod-crypto-ccm=y
+CONFIG_PACKAGE_kmod-crypto-cmac=y
+CONFIG_PACKAGE_kmod-crypto-crc32c=y
+CONFIG_PACKAGE_kmod-crypto-ctr=y
+CONFIG_PACKAGE_kmod-crypto-des=y
+CONFIG_PACKAGE_kmod-crypto-gcm=y
+CONFIG_PACKAGE_kmod-crypto-gf128=y
+CONFIG_PACKAGE_kmod-crypto-ghash=y
+CONFIG_PACKAGE_kmod-crypto-hmac=y
+CONFIG_PACKAGE_kmod-crypto-md4=y
+CONFIG_PACKAGE_kmod-crypto-md5=y
+CONFIG_PACKAGE_kmod-crypto-rng=y
+CONFIG_PACKAGE_kmod-crypto-seqiv=y
+CONFIG_PACKAGE_kmod-crypto-sha256=y
+CONFIG_PACKAGE_kmod-crypto-sha512=y
+CONFIG_PACKAGE_kmod-ebtables=y
+CONFIG_PACKAGE_kmod-ebtables-ipv4=y
+CONFIG_PACKAGE_kmod-ebtables-ipv6=y
+CONFIG_PACKAGE_kmod-fs-autofs4=y
+CONFIG_PACKAGE_kmod-fs-vfat=y
+CONFIG_PACKAGE_kmod-ifb=y
+CONFIG_PACKAGE_kmod-inet-diag=y
+CONFIG_PACKAGE_kmod-lib-crc32c=y
+CONFIG_PACKAGE_kmod-lib-lzo=y
+CONFIG_PACKAGE_kmod-mediatek_hnat=y
+CONFIG_PACKAGE_kmod-mt_wifi=y
+CONFIG_PACKAGE_kmod-nf-flow=y
+CONFIG_PACKAGE_kmod-nls-base=y
+CONFIG_PACKAGE_kmod-nls-cp437=y
+CONFIG_PACKAGE_kmod-nls-iso8859-1=y
+CONFIG_PACKAGE_kmod-nls-utf8=y
+CONFIG_PACKAGE_kmod-sched-core=y
+CONFIG_PACKAGE_kmod-sched-bpf=y
+CONFIG_PACKAGE_kmod-scsi-core=y
+CONFIG_PACKAGE_kmod-tcp-bbr=y
+CONFIG_PACKAGE_kmod-tun=y
+CONFIG_PACKAGE_kmod-warp=y
+CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
+CONFIG_PACKAGE_kmod-zram=y
+
+# ---------------------------------------------------------------------------
+# 硬件：USB3.0 / eMMC / 文件系统
+# ---------------------------------------------------------------------------
+CONFIG_PACKAGE_kmod-usb3=y
+CONFIG_PACKAGE_kmod-usb-storage=y
+CONFIG_PACKAGE_kmod-usb-storage-uas=y
+CONFIG_PACKAGE_kmod-mmc=y
+CONFIG_PACKAGE_mmc-utils=y
+
+CONFIG_PACKAGE_kmod-fs-ext4=y
+CONFIG_PACKAGE_e2fsprogs=y
+CONFIG_PACKAGE_kmod-fs-f2fs=y
+CONFIG_PACKAGE_f2fs-tools=y
+CONFIG_PACKAGE_f2fsck=y
+CONFIG_PACKAGE_mkf2fs=y
+CONFIG_PACKAGE_kmod-fs-exfat=y
+CONFIG_PACKAGE_exfat-mkfs=y
+CONFIG_PACKAGE_dosfstools=y
+CONFIG_PACKAGE_automount=y
+CONFIG_PACKAGE_lsblk=y
+CONFIG_PACKAGE_fdisk=y
+CONFIG_PACKAGE_gdisk=y
+CONFIG_PACKAGE_cfdisk=y
+CONFIG_PACKAGE_sgdisk=y
+CONFIG_PACKAGE_blkid=y
+CONFIG_PACKAGE_blockdev=y
+CONFIG_PACKAGE_losetup=y
+
+# ---------------------------------------------------------------------------
+# MTK 平台用户态组件 / LuCI（25.12 使用 ucode 版）
+# ---------------------------------------------------------------------------
+CONFIG_PACKAGE_datconf=y
+CONFIG_PACKAGE_ucode-mod-datconf=y
+CONFIG_PACKAGE_l1util=y
+CONFIG_PACKAGE_ucode-mod-l1parser=y
+CONFIG_PACKAGE_kvcedit=y
+CONFIG_PACKAGE_libkvcutil=y
+CONFIG_PACKAGE_mii_mgr=y
+CONFIG_PACKAGE_regs=y
+CONFIG_PACKAGE_switch=y
+CONFIG_PACKAGE_wifi-dats=y
+CONFIG_PACKAGE_mtkhqos_util=y
+CONFIG_PACKAGE_mtwifi-cfg-ucode=y
+CONFIG_PACKAGE_luci-app-eqos-mtk=y
+CONFIG_PACKAGE_luci-i18n-eqos-mtk-zh-cn=y
+CONFIG_PACKAGE_luci-app-turboacc-mtk=y
+CONFIG_PACKAGE_luci-i18n-turboacc-mtk-zh-cn=y
+CONFIG_PACKAGE_luci-app-mtwifi-cfg=y
+CONFIG_PACKAGE_luci-i18n-mtwifi-cfg-zh-cn=y
+# CONFIG_PACKAGE_TURBOACC_INCLUDE_FLOW_OFFLOADING is not set
+CONFIG_PACKAGE_TURBOACC_INCLUDE_NO_FASTPATH=y
+
+# ---------------------------------------------------------------------------
+# 基础工具
+# ---------------------------------------------------------------------------
+CONFIG_PACKAGE_blockd=y
+CONFIG_PACKAGE_ca-certificates=y
+CONFIG_PACKAGE_ebtables=y
+CONFIG_PACKAGE_ethtool=y
+CONFIG_PACKAGE_htop=y
+CONFIG_PACKAGE_ip-bridge=y
+CONFIG_PACKAGE_iw=y
+CONFIG_PACKAGE_iwinfo-ucode=y
+CONFIG_PACKAGE_libatomic=y
+CONFIG_PACKAGE_libblkid=y
+CONFIG_PACKAGE_libcap-ng=y
+CONFIG_PACKAGE_libcbor=y
+CONFIG_PACKAGE_libevdev=y
+CONFIG_PACKAGE_libfido2=y
+CONFIG_PACKAGE_libncurses=y
+CONFIG_PACKAGE_libnl=y
+CONFIG_PACKAGE_libnl-core=y
+CONFIG_PACKAGE_libnl-genl=y
+CONFIG_PACKAGE_libnl-nf=y
+CONFIG_PACKAGE_libnl-route=y
+CONFIG_PACKAGE_libopenssl-afalg_sync=y
+CONFIG_PACKAGE_libopenssl-devcrypto=y
+CONFIG_PACKAGE_libpcap=y
+CONFIG_PACKAGE_libstdcpp=y
+CONFIG_PACKAGE_libudev-zero=y
+CONFIG_PACKAGE_libuuid=y
+CONFIG_PACKAGE_miniupnpd=y
+CONFIG_PACKAGE_nano=y
+CONFIG_PACKAGE_openssh-keygen=y
+CONFIG_PACKAGE_openssh-sftp-server=y
+CONFIG_PACKAGE_openssl-util=y
+CONFIG_PACKAGE_resolveip=y
+CONFIG_PACKAGE_tc-tiny=y
+CONFIG_PACKAGE_tcpdump=y
+CONFIG_PACKAGE_terminfo=y
+CONFIG_PACKAGE_wireless-regdb=y
+CONFIG_PACKAGE_wireless-tools=y
+CONFIG_PACKAGE_zram-swap=y
+
+CONFIG_PACKAGE_bash=y
+CONFIG_PACKAGE_curl=y
+CONFIG_PACKAGE_jq=y
+CONFIG_PACKAGE_ip-full=y
+CONFIG_PACKAGE_coreutils=y
+CONFIG_PACKAGE_coreutils-nohup=y
+
+# ---------------------------------------------------------------------------
+# 代理 / 分流基础（nft + iptables 双栈）
+# ---------------------------------------------------------------------------
+CONFIG_PACKAGE_nftables=y
+CONFIG_PACKAGE_kmod-nft-nat=y
+CONFIG_PACKAGE_kmod-nft-queue=y
+CONFIG_PACKAGE_kmod-nft-masq=y
+CONFIG_PACKAGE_kmod-nft-fib=y
+CONFIG_PACKAGE_kmod-nft-tproxy=y
+CONFIG_PACKAGE_kmod-nft-socket=y
+CONFIG_PACKAGE_kmod-nft-compat=y
+
+CONFIG_PACKAGE_kmod-ipt-nat=y
+CONFIG_PACKAGE_kmod-nf-nat=y
+CONFIG_PACKAGE_kmod-nf-nat6=y
+CONFIG_PACKAGE_ip6tables-mod-nat=y
+CONFIG_PACKAGE_kmod-ip6tables=y
+
+CONFIG_PACKAGE_kmod-ipt-socket=y
+CONFIG_PACKAGE_iptables-mod-socket=y
+CONFIG_PACKAGE_kmod-ipt-ipset=y
+CONFIG_PACKAGE_kmod-dummy=y
+
+CONFIG_PACKAGE_kmod-nf-conntrack-netlink=y
+CONFIG_PACKAGE_kmod-netlink-diag=y
+
+CONFIG_PACKAGE_ipset=y
+CONFIG_PACKAGE_libipset=y
+CONFIG_PACKAGE_ip6tables-extra=y
+CONFIG_PACKAGE_ip6tables-nft=y
+CONFIG_PACKAGE_iptables-mod-conntrack-extra=y
+CONFIG_PACKAGE_iptables-mod-extra=y
+CONFIG_PACKAGE_iptables-mod-filter=y
+CONFIG_PACKAGE_iptables-mod-hashlimit=y
+CONFIG_PACKAGE_iptables-mod-iface=y
+CONFIG_PACKAGE_iptables-mod-ipmark=y
+CONFIG_PACKAGE_iptables-mod-ipopt=y
+CONFIG_PACKAGE_iptables-mod-iprange=y
+CONFIG_PACKAGE_iptables-mod-ipv4options=y
+CONFIG_PACKAGE_iptables-mod-nat-extra=y
+CONFIG_PACKAGE_iptables-mod-proto=y
+CONFIG_PACKAGE_iptables-mod-tee=y
+CONFIG_PACKAGE_iptables-mod-tproxy=y
+CONFIG_PACKAGE_iptables-mod-u32=y
+CONFIG_PACKAGE_kmod-ip6tables-extra=y
+CONFIG_PACKAGE_kmod-ipt-compat-xtables=y
+CONFIG_PACKAGE_kmod-ipt-conntrack-extra=y
+CONFIG_PACKAGE_kmod-ipt-extra=y
+CONFIG_PACKAGE_kmod-ipt-filter=y
+CONFIG_PACKAGE_kmod-ipt-hashlimit=y
+CONFIG_PACKAGE_kmod-ipt-iface=y
+CONFIG_PACKAGE_kmod-ipt-ipmark=y
+CONFIG_PACKAGE_kmod-ipt-ipopt=y
+CONFIG_PACKAGE_kmod-ipt-iprange=y
+CONFIG_PACKAGE_kmod-ipt-ipv4options=y
+CONFIG_PACKAGE_kmod-ipt-nat-extra=y
+CONFIG_PACKAGE_kmod-ipt-offload=y
+CONFIG_PACKAGE_kmod-ipt-proto=y
+CONFIG_PACKAGE_kmod-ipt-raw6=y
+CONFIG_PACKAGE_kmod-ipt-tee=y
+CONFIG_PACKAGE_kmod-ipt-tproxy=y
+CONFIG_PACKAGE_kmod-ipt-u32=y
+
+# 调度 / 流控
+CONFIG_PACKAGE_kmod-sched-cake=y
+CONFIG_PACKAGE_kmod-sched-fq_codel=y
+CONFIG_PACKAGE_kmod-sched-act-mirred=y
+CONFIG_PACKAGE_tc-full=y
+CONFIG_PACKAGE_tc-mod-iptables=y
+
+# eBPF / daed
+CONFIG_BPF_TOOLCHAIN_HOST=y
+CONFIG_PACKAGE_bpftool=y
+
+# ---------------------------------------------------------------------------
+# 应用：代理
+# ---------------------------------------------------------------------------
+CONFIG_PACKAGE_luci-app-ssr-plus=n
+CONFIG_PACKAGE_luci-app-openclash=y
+# CONFIG_PACKAGE_luci-app-homeproxy=y
+
+# Passwall（Rust 组件已关闭，原因见上方“修订”；如需 SS-Rust 可自行改回 =y）
+CONFIG_PACKAGE_luci-app-passwall=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Geoview=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Haproxy=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Hysteria=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_NaiveProxy=y
+# CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Libev_Client is not set
+# CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Libev_Server is not set
+# CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Rust_Client is not set
+# CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Rust_Server is not set
+# CONFIG_PACKAGE_luci-app-passwall_INCLUDE_ShadowsocksR_Libev_Client is not set
+# CONFIG_PACKAGE_luci-app-passwall_INCLUDE_ShadowsocksR_Libev_Server is not set
+# CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Simple_Obfs is not set
+# CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadow_TLS is not set
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_SingBox=y
+# ↑ SingBox 已覆盖 Shadowsocks / SS2022 / VMess / Trojan / Hysteria 等协议
+# CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Trojan_Plus is not set
+# CONFIG_PACKAGE_luci-app-passwall_INCLUDE_tuic_client is not set
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_V2ray_Geodata=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_V2ray_Plugin=y
+# CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray is not set
+# CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray_Plugin is not set
+
+# Passwall2（与 passwall 二选一，这里保持关闭）
+CONFIG_PACKAGE_luci-app-passwall2=n
+
+# Nikki
+CONFIG_PACKAGE_luci-app-nikki=y
+# CONFIG_PACKAGE_luci-app-nikki-rs=y
+
+# daed（25.12 中 dae 家族包名为 daede）
+CONFIG_PACKAGE_luci-app-daede=y
+CONFIG_PACKAGE_daed=y
+
+# ---------------------------------------------------------------------------
+# 应用：功能
+# ---------------------------------------------------------------------------
+CONFIG_PACKAGE_luci-app-ttyd=y
+CONFIG_PACKAGE_luci-app-diskman=y
+CONFIG_PACKAGE_luci-app-dockerman=y
+CONFIG_PACKAGE_luci-app-upnp=y
+CONFIG_PACKAGE_luci-app-firewall=y
+CONFIG_PACKAGE_luci-app-smartdns=y
+CONFIG_PACKAGE_luci-app-authshield=y
+
+# 按需开启（默认关闭）
+CONFIG_PACKAGE_luci-app-poweroffdevice=y
+# CONFIG_PACKAGE_luci-app-watchdog=y
+# CONFIG_PACKAGE_luci-app-taskplan=y
+# CONFIG_PACKAGE_luci-app-oaf=y
+CONFIG_PACKAGE_luci-app-lucky=y
+# CONFIG_PACKAGE_luci-app-mosdns=y
+CONFIG_PACKAGE_luci-app-openlist2=y
+# CONFIG_PACKAGE_luci-app-rtp2httpd=y
+# CONFIG_PACKAGE_luci-app-vlmcsd=y
+# CONFIG_PACKAGE_luci-app-easytier=y
+# CONFIG_PACKAGE_luci-app-zerotier=y
+# CONFIG_PACKAGE_luci-app-tailscale-community=y
+# CONFIG_PACKAGE_luci-app-wireguard=y
+# CONFIG_PACKAGE_luci-proto-wireguard=y
+# CONFIG_PACKAGE_wireguard-tools=y
+
+# ---------------------------------------------------------------------------
+# 应用：网络共享
+# ---------------------------------------------------------------------------
+CONFIG_PACKAGE_autosamba=n
+CONFIG_PACKAGE_luci-app-samba4=n
+CONFIG_PACKAGE_luci-app-cifs-mount=n
+CONFIG_PACKAGE_kmod-fs-ksmbd=y
+
+# ---------------------------------------------------------------------------
+# 主题
+# ---------------------------------------------------------------------------
+CONFIG_PACKAGE_luci-theme-argon=y
+CONFIG_PACKAGE_luci-app-argon-config=y
+CONFIG_PACKAGE_luci-theme-aurora=y
+CONFIG_PACKAGE_luci-app-aurora-config=y
+CONFIG_PACKAGE_luci-theme-bootstrap=n
+CONFIG_PACKAGE_luci-theme-bootstrap-mod=y
+# CONFIG_PACKAGE_luci-theme-kucat=y
+# CONFIG_PACKAGE_luci-app-kucat-config=y
+
+# ---------------------------------------------------------------------------
+# 删除不需要的插件
+# ---------------------------------------------------------------------------
+CONFIG_PACKAGE_luci-app-wol=n
+CONFIG_PACKAGE_luci-app-ddns=n
+CONFIG_PACKAGE_luci-app-xlnetacc=n
+CONFIG_PACKAGE_luci-app-unblockmusic=n
+CONFIG_PACKAGE_luci-app-accesscontrol=n
+CONFIG_PACKAGE_luci-app-uugamebooster=n
+CONFIG_PACKAGE_luci-app-adbyby-plus=n
+CONFIG_PACKAGE_luci-app-attendedsysupgrade=n
