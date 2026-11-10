@@ -17,6 +17,13 @@ env:
   # 强制 JavaScript Action 使用 Node.js 24，避免 Node 20 弃用警告
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+  # Rust/cargo 网络容错：crates.io 的 HTTP/2 连接偶发中断时自动重试
+  # 本次失败即 “Error in the HTTP2 framing layer / download of aes-gcm-siv failed”
+  CARGO_HTTP_MULTIPLEXING: "false"
+  CARGO_NET_RETRY: "10"
+  CARGO_HTTP_TIMEOUT: "120"
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+
 on:
   repository_dispatch:
   workflow_dispatch:
@@ -409,13 +416,21 @@ jobs:
 
         if make -j"$(nproc)"; then
           echo "多线程编译成功"
-        elif make -j1; then
-          echo "单线程编译成功"
-        elif make -j1 V=s; then
-          echo "单线程详细日志编译成功"
         else
-          echo "编译失败"
-          exit 1
+          echo "⚠️ 第一次编译失败，30 秒后重试（网络类错误通常可自愈）..."
+          sleep 30
+          if make -j1; then
+            echo "单线程编译成功"
+          else
+            echo "⚠️ 第二次编译失败，60 秒后再试一次..."
+            sleep 60
+            if make -j1 V=s; then
+              echo "单线程详细日志编译成功"
+            else
+              echo "编译失败"
+              exit 1
+            fi
+          fi
         fi
 
         echo "========================================"
@@ -449,10 +464,21 @@ jobs:
     # =========================================================
     - name: Organize files
       id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
         cd openwrt/bin/targets/*/*
         rm -rf packages
+
+        # 关键防呆：没有本机型的 sysupgrade 固件就绝不发布
+        # （此前编译失败后仍会执行到这里，把 bl2 等 .bin 当固件发到 Release）
+        IMG=$(ls -1 ./*umi_uax3000e*sysupgrade.bin 2>/dev/null | head -n 1)
+        if [ -z "$IMG" ]; then
+          echo "❌ 未找到 umi_uax3000e 的 sysupgrade 固件，终止发布"
+          ls -lh
+          exit 1
+        fi
+        echo "✅ 待发布固件: $IMG"
+
         echo "FIRMWARE=$PWD" >> "$GITHUB_ENV"
         echo "status=success" >> "$GITHUB_OUTPUT"
 
@@ -468,7 +494,7 @@ jobs:
     # =========================================================
     - name: Generate release tag
       id: tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
         AUTHOR=$(echo "${{ env.REPO_URL }}" | cut -d'/' -f4)
         DEVICE_NAME="${{ env.DEVICE_NAME }}"
@@ -509,12 +535,12 @@ jobs:
       with:
         tag_name: ${{ steps.tag.outputs.release_tag }}
         body_path: release.txt
+        # 只发布本机型的固件/校验文件，避免把 bl2 等无关 .bin 一起发出去
         files: |
-          ${{ env.FIRMWARE }}/*.bin
-          ${{ env.FIRMWARE }}/*.ipk
-          ${{ env.FIRMWARE }}/*.img.gz
-          ${{ env.FIRMWARE }}/*.manifest
-          ${{ env.FIRMWARE }}/*.tar.gz
+          ${{ env.FIRMWARE }}/*umi_uax3000e*.bin
+          ${{ env.FIRMWARE }}/*umi_uax3000e*.manifest
+          ${{ env.FIRMWARE }}/*umi_uax3000e*.img.gz
+          ${{ env.FIRMWARE }}/*umi_uax3000e*.tar.gz
 
     # =========================================================
     # 13. 清理旧的工作流记录
@@ -533,7 +559,7 @@ jobs:
     # =========================================================
     - name: Remove old releases
       uses: dev-drprasad/delete-older-releases@v0.3.4
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
       with:
         keep_latest: 10
         delete_tags: true
