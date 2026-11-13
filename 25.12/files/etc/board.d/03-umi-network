@@ -1,0 +1,15 @@
+#!/bin/sh
+#
+# UMI UAX3000E: WAN 挂在 gmac1 (eth1)，LAN 是 DSA 的 lan1-lan3。
+# 02_network 的默认分支会把 WAN 指到不存在的 "wan" 设备，这里覆盖掉。
+#
+. /lib/functions.sh
+. /lib/functions/uci-defaults.sh
+. /lib/functions/system.sh
+
+board_config_update
+[ "$(board_name)" = "umi,uax3000e" ] && \
+	ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" eth1
+board_config_flush
+
+exit 0

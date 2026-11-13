@@ -1,0 +1,39 @@
+#!/bin/sh
+#
+# 升级保留配置时，把默认的 ImmortalWrt SSID 改成 TP-ls / TP-ls2.4，
+# 并设置 WPA/WPA2 mixed；用户自定义 SSID 不动。
+#
+[ -s /etc/config/wireless ] || exit 0
+
+applied=0
+for sec in $(uci show wireless 2>/dev/null | awk -F'[.=]' '$3=="wifi-iface"{print $2}'); do
+	dev=$(uci -q get "wireless.$sec.device")
+	band=$(uci -q get "wireless.$dev.band")
+	cur=$(uci -q get "wireless.$sec.ssid")
+
+	case "$cur" in
+		ImmortalWrt-*|"") ;;
+		*) continue ;;
+	esac
+
+	case "$band" in
+		2g) ssid='TP-ls2.4' ;;
+		5g) ssid='TP-ls' ;;
+		*) continue ;;
+	esac
+
+	uci -q set "wireless.$sec.ssid=$ssid"
+	uci -q set "wireless.$sec.key=lixiaolan15987359965"
+	uci -q set "wireless.$sec.encryption=psk-mixed"
+	applied=1
+done
+
+if [ "$applied" = 1 ]; then
+	for dev in $(uci show wireless 2>/dev/null | awk -F'[.=]' '$3=="wifi-device"{print $2}'); do
+		uci -q set "wireless.$dev.txpower=100"
+		uci -q set "wireless.$dev.country=CN"
+	done
+	uci -q commit wireless
+fi
+
+exit 0
