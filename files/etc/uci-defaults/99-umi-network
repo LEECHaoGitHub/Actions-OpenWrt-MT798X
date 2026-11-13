@@ -1,0 +1,23 @@
+#!/bin/sh
+#
+# 升级保留配置时修复 WAN/LAN 绑定：
+#  - wan / wan6 指向 eth1（gmac1）
+#  - br-lan 只保留 lan1 lan2 lan3（去掉不存在的 lan4）
+#
+[ -e /etc/config/network ] || exit 0
+
+for iface in wan wan6; do
+	[ -n "$(uci -q get network.$iface)" ] && \
+		uci -q set network.$iface.device='eth1'
+done
+
+i=0
+while uci -q get "network.@device[$i]" >/dev/null 2>&1; do
+	if [ "$(uci -q get network.@device[$i].name)" = "br-lan" ]; then
+		uci -q set network.@device[$i].ports='lan1 lan2 lan3'
+	fi
+	i=$((i + 1))
+done
+
+uci -q commit network
+exit 0

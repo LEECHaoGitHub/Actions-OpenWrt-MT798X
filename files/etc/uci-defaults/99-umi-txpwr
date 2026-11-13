@@ -1,0 +1,22 @@
+#!/bin/sh
+#
+# 首次启动先尝试应用 MT7981 最大功率补丁；
+# 并把 /usr/sbin/umi-txpwr 挂到 /etc/rc.local，保证文件晚生成时下次开机也能补上。
+#
+/usr/sbin/umi-txpwr
+
+if [ -f /etc/rc.local ]; then
+	if ! grep -q 'umi-txpwr' /etc/rc.local 2>/dev/null; then
+		awk '!done && $0 == "exit 0" { print "/usr/sbin/umi-txpwr"; done=1 } { print }' \
+			/etc/rc.local > /tmp/rc.local.new
+		cat /tmp/rc.local.new > /etc/rc.local
+		rm -f /tmp/rc.local.new
+		grep -q 'umi-txpwr' /etc/rc.local 2>/dev/null || \
+			echo '/usr/sbin/umi-txpwr' >> /etc/rc.local
+	fi
+else
+	printf '#!/bin/sh\n/usr/sbin/umi-txpwr\nexit 0\n' > /etc/rc.local
+fi
+chmod 0755 /etc/rc.local
+
+exit 0
