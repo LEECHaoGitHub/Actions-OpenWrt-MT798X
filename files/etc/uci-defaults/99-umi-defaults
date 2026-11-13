@@ -1,0 +1,33 @@
+#!/bin/sh
+#
+# v8 默认设置：
+#  - 全局网络选项：MPTCP / tcp_l3mdev / udp_l3mdev / packet_steering=2 / steering_flows=128
+#  - DNS：关闭 rebind protection（DNS 重绑定保护）
+#  - 防火墙：FullCone NAT + FullCone NAT6；软件流量卸载默认开启（硬件卸载不启用）
+#
+[ -s /etc/config/network ] || /bin/config_generate
+
+[ -e /etc/config/network ] && {
+	uci -q set network.globals=globals
+	uci -q set network.globals.multipath='1'
+	uci -q set network.globals.tcp_l3mdev='1'
+	uci -q set network.globals.udp_l3mdev='1'
+	uci -q set network.globals.packet_steering='2'
+	uci -q set network.globals.steering_flows='128'
+	uci -q commit network
+}
+
+[ -e /etc/config/dhcp ] && {
+	uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
+	uci -q commit dhcp
+}
+
+[ -e /etc/config/firewall ] && {
+	uci -q set firewall.@defaults[0].fullcone='1'
+	uci -q set firewall.@defaults[0].fullcone6='1'
+	uci -q set firewall.@defaults[0].flow_offloading='1'
+	uci -q delete firewall.@defaults[0].flow_offloading_hw
+	uci -q commit firewall
+}
+
+exit 0
