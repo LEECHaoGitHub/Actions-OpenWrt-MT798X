@@ -1,4 +1,5 @@
 name: 25.12-umi-uax3000e
+
 env:
   DEVICE_NAME: 25.12-umi-uax3000e
   REPO_URL: https://github.com/chasey-dev/immortalwrt-mt798x-rebase
@@ -12,14 +13,17 @@ env:
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
+
   # 强制 JavaScript Action 使用 Node.js 24，避免 Node 20 弃用警告
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
   # Rust/cargo 网络容错：crates.io 的 HTTP/2 连接偶发中断时自动重试
   # 本次失败即 “Error in the HTTP2 framing layer / download of aes-gcm-siv failed”
   CARGO_HTTP_MULTIPLEXING: "false"
   CARGO_NET_RETRY: "10"
   CARGO_HTTP_TIMEOUT: "120"
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+
 on:
   repository_dispatch:
   workflow_dispatch:
@@ -28,6 +32,7 @@ on:
         description: 'SSH connection to Actions'
         required: false
         default: 'false'
+
 # =========================================================
 # 权限声明
 # 创建/上传/删除 Release、删除 workflow runs 必需
@@ -35,13 +40,16 @@ on:
 permissions:
   contents: write
   actions: write
+
 jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 350
+
     steps:
     - name: Checkout
       uses: actions/checkout@v5
+
     # =========================================================
     # 1. 释放空间 + 初始化编译环境
     # =========================================================
@@ -53,15 +61,18 @@ jobs:
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
           /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/lib/jvm
         sudo docker image prune --all --force
+
         # 配置 12GB Swap（Rust/LLVM 编译需要大量虚拟内存）
         sudo swapoff -a && sudo rm -f /mnt/swapfile
         sudo fallocate -l 12G /mnt/swapfile
         sudo chmod 600 /mnt/swapfile
         sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+
         # 系统更新
         sudo -E apt-get -yqq purge firefox snapd
         sudo -E apt-get -yqq update
         sudo -E apt-get -yqq full-upgrade
+
         # 安装 eBPF / daed / Honk 编译依赖
         # 安装 pnpm（daed 前端构建需要）
         sudo npm install -g pnpm
@@ -72,18 +83,24 @@ jobs:
           build-essential libssl-dev libelf-dev \
           bc flex bison python3 xz-utils tar \
           dos2unix libfuse-dev ca-certificates
+
         # 安装 ImmortalWrt 官方编译依赖
         sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+
         # 清理
         sudo -E apt-get -yqq autoremove --purge
         sudo -E apt-get -yqq clean
         sudo -E timedatectl set-timezone "$TZ"
+
         sudo mkdir -p /workdir
         sudo chown "$USER":"$USER" /workdir
+
         echo "磁盘空间:"
         df -hT
+
         echo "内存/Swap:"
         free -h
+
     # =========================================================
     # 2. 克隆源码
     # =========================================================
@@ -93,6 +110,7 @@ jobs:
         df -hT "$PWD"
         git clone "$REPO_URL" -b "$REPO_BRANCH" --single-branch --depth=1 openwrt
         ln -sf /workdir/openwrt "$GITHUB_WORKSPACE/openwrt"
+
     # =========================================================
     # 3. 更新并安装 Feeds
     # =========================================================
@@ -101,6 +119,7 @@ jobs:
         cd openwrt
         ./scripts/feeds update -a
         ./scripts/feeds install -a
+
     # =========================================================
     # 4. 加载自定义 Feeds
     # =========================================================
@@ -110,6 +129,7 @@ jobs:
         chmod +x "$DIY_P1_SH"
         cd openwrt
         "$GITHUB_WORKSPACE/$DIY_P1_SH"
+
     # =========================================================
     # 4.5 注入 UMI UAX3000E 设备支持（25.12 源码默认没有该设备）
     #     必须在 make defconfig 之前完成，否则设备符号会被丢弃
@@ -119,6 +139,7 @@ jobs:
         chmod +x "$GITHUB_WORKSPACE/25.12/umi-uax3000e/add-device.sh"
         cd openwrt
         "$GITHUB_WORKSPACE/25.12/umi-uax3000e/add-device.sh"
+
     # =========================================================
     # 5. 加载自定义配置 (diy-part2.sh)
     # =========================================================
@@ -129,6 +150,7 @@ jobs:
         chmod +x "$DIY_P2_SH"
         cd openwrt
         "$GITHUB_WORKSPACE/$DIY_P2_SH"
+
     # =========================================================
     # 5.5 加载自定义配置 (diy-part3.sh)
     # =========================================================
@@ -138,6 +160,32 @@ jobs:
         chmod +x "$DIY_P3_SH"
         cd openwrt
         "$GITHUB_WORKSPACE/$DIY_P3_SH"
+
+    # =========================================================
+    # 5.51 修正 files 覆盖层权限（uci-defaults 必须可执行）
+    # =========================================================
+    - name: Fix overlay permissions
+      run: |
+        if [ -d openwrt/files/etc/uci-defaults ]; then
+          chmod 0755 openwrt/files/etc/uci-defaults/*
+          ls -l openwrt/files/etc/uci-defaults
+        fi
+        if [ -d openwrt/files/etc/modules.d ]; then
+          ls -l openwrt/files/etc/modules.d
+        fi
+        if [ -d openwrt/files/etc/board.d ]; then
+          chmod 0755 openwrt/files/etc/board.d/*
+          ls -l openwrt/files/etc/board.d
+        fi
+        if [ -f openwrt/files/lib/wifi/mtwifi.uc ]; then
+          chmod 0755 openwrt/files/lib/wifi/mtwifi.uc
+          ls -l openwrt/files/lib/wifi
+        fi
+        if [ -f openwrt/files/usr/sbin/umi-txpwr ]; then
+          chmod 0755 openwrt/files/usr/sbin/umi-txpwr
+          ls -l openwrt/files/usr/sbin
+        fi
+
     # =========================================================
     # 5.55 校验设备是否真的被选中（避免编译出错误机型固件）
     # =========================================================
@@ -153,6 +201,7 @@ jobs:
           grep '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_' .config || true
           exit 1
         fi
+
     # =========================================================
     # 5.56 预置 honk-core（honk 源码编译需要 zig + nightly Rust）
     #      从 luci-app-honk 同版本 Release 取 aarch64 预编译二进制，
@@ -163,23 +212,28 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         cd openwrt
+
         if ! grep -q '^CONFIG_PACKAGE_honk=y' .config; then
           echo "ℹ️ 未选中 honk，跳过预编译 honk-core"
           exit 0
         fi
+
         PKG_DIR="package/custom/daed-honk/honk"
         if [ ! -f "$PKG_DIR/Makefile" ]; then
           echo "❌ 未找到 $PKG_DIR/Makefile"
           exit 1
         fi
+
         VER=$(sed -n 's/^PKG_VERSION:=//p' "$PKG_DIR/Makefile" | head -n 1)
         REL=$(sed -n 's/^PKG_RELEASE:=//p' "$PKG_DIR/Makefile" | head -n 1)
         VER_DOT=${VER//\~/.}
         VER_TAG=${VER//\~/_}
         echo "honk 版本: $VER (release $REL)"
+
         TAG="honk_${VER_TAG}-r${REL}"
         ASSET="honk_${VER_DOT}-r${REL}_aarch64_generic-openwrt-24.10.8.ipk"
         URL="https://github.com/QiuSimons/luci-app-honk/releases/download/${TAG}/${ASSET}"
+
         if ! curl -fsSL --retry 3 --retry-delay 5 -o /tmp/honk.ipk "$URL"; then
           echo "⚠️ 直接下载失败，改用 API 查找同版本 asset..."
           URL=$(gh api "repos/QiuSimons/luci-app-honk/releases?per_page=50" \
@@ -191,6 +245,7 @@ jobs:
           fi
           curl -fsSL --retry 5 --retry-delay 5 -o /tmp/honk.ipk "$URL"
         fi
+
         rm -rf /tmp/honk-extract && mkdir -p /tmp/honk-extract
         # 兼容两种包格式：标准 ar/ipk，或 “tar.gz 外壳里包 data.tar.gz”
         if ar t /tmp/honk.ipk >/dev/null 2>&1; then
@@ -216,10 +271,12 @@ jobs:
           file "$BIN"
           exit 1
         fi
+
         install -m 0755 "$BIN" "$GITHUB_WORKSPACE/openwrt/$PKG_DIR/files/honk-core.bin"
         rm -f "$GITHUB_WORKSPACE/openwrt/$PKG_DIR/files/honk-core.bin.stamp"
         echo "✅ 已放置预编译 honk-core，honk 将跳过 zig/rust 编译"
         file "$GITHUB_WORKSPACE/openwrt/$PKG_DIR/files/honk-core.bin"
+
     # =========================================================
     # 5.6 生成 Toolchain 缓存 Key
     # =========================================================
@@ -228,20 +285,26 @@ jobs:
       run: |
         cd openwrt
         make defconfig 1>/dev/null 2>&1
+
         # 提取目标平台
         TARGET=$(grep '^CONFIG_TARGET_BOARD=' .config | cut -d'"' -f2)
         SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | cut -d'"' -f2)
+
         # 基于 tools/ 和 toolchain/ 源码生成 hash
         TOOLS_HASH=$(find tools toolchain -type f \( -name "Makefile" -o -name "*.mk" \) \
           -exec md5sum {} + 2>/dev/null | sort | md5sum | cut -d' ' -f1)
+
         CACHE_KEY="toolchain-${TARGET}-${SUBTARGET}-${TOOLS_HASH:0:16}"
         CACHE_PREFIX="toolchain-${TARGET}-${SUBTARGET}"
+
         echo "CACHE_KEY=$CACHE_KEY" >> "$GITHUB_OUTPUT"
         echo "CACHE_PREFIX=$CACHE_PREFIX" >> "$GITHUB_OUTPUT"
+
         echo "========================================"
         echo "🔑 缓存 Key: $CACHE_KEY"
         echo "📌 缓存前缀: $CACHE_PREFIX"
         echo "========================================"
+
     # =========================================================
     # 5.7 恢复 Toolchain —— 第一优先: actions/cache
     # =========================================================
@@ -253,6 +316,7 @@ jobs:
           /workdir/openwrt/staging_dir/host*
           /workdir/openwrt/staging_dir/tool*
         key: ${{ steps.cache-key.outputs.CACHE_KEY }}
+
     # =========================================================
     # 5.8 恢复 Toolchain —— 第二优先: Release 备份
     # 精确匹配当前 CACHE_KEY.tzst，避免恢复旧工具链
@@ -265,27 +329,34 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         cd openwrt
+
         CACHE_KEY="${{ steps.cache-key.outputs.CACHE_KEY }}"
         ASSET_NAME="${CACHE_KEY}.tzst"
+
         if ! gh release view toolchain-cache --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
           echo "restored=false" >> "$GITHUB_OUTPUT"
           echo "⚠️ toolchain-cache Release 不存在，可能是首次运行"
           exit 0
         fi
+
         if gh release view toolchain-cache \
           --repo "$GITHUB_REPOSITORY" \
           --json assets \
           -q '.assets[].name' 2>/dev/null | grep -qx "$ASSET_NAME"; then
+
           echo "📦 从 Release 下载工具链: $ASSET_NAME"
           echo "📍 Release 仓库: $GITHUB_REPOSITORY"
+
           gh release download toolchain-cache \
             --repo "$GITHUB_REPOSITORY" \
             -p "$ASSET_NAME" \
             -D .
+
           if [ -e "$ASSET_NAME" ]; then
             echo "📂 解压工具链缓存..."
             tar -I unzstd -xf "$ASSET_NAME" || tar -xf "$ASSET_NAME"
             rm -f "$ASSET_NAME"
+
             echo "restored=true" >> "$GITHUB_OUTPUT"
             echo "✅ Release 备份恢复成功"
           else
@@ -296,6 +367,7 @@ jobs:
           echo "restored=false" >> "$GITHUB_OUTPUT"
           echo "⚠️ Release 中没有当前缓存文件: $ASSET_NAME"
         fi
+
     # =========================================================
     # 5.9 处理 Toolchain
     # - actions/cache 命中：跳过工具链编译，不保存缓存
@@ -306,40 +378,49 @@ jobs:
       id: toolchain
       run: |
         cd openwrt
+
         CACHE_HIT="${{ steps.cache-restore.outputs.cache-hit }}"
         RELEASE_HIT="${{ steps.release-restore.outputs.restored }}"
+
         if [ "$CACHE_HIT" = "true" ]; then
           echo "✅ actions/cache 命中，工具链已恢复"
           echo "need_build=false" >> "$GITHUB_OUTPUT"
           echo "need_save_cache=false" >> "$GITHUB_OUTPUT"
           echo "need_save_release=false" >> "$GITHUB_OUTPUT"
+
         elif [ "$RELEASE_HIT" = "true" ]; then
           echo "✅ Release 工具链缓存命中"
           echo "📌 将重新写入 actions/cache，加速下次构建"
           echo "need_build=false" >> "$GITHUB_OUTPUT"
           echo "need_save_cache=true" >> "$GITHUB_OUTPUT"
           echo "need_save_release=false" >> "$GITHUB_OUTPUT"
+
         else
           echo "=========================================="
           echo "⏳ 无可用缓存，开始编译工具链..."
           echo "=========================================="
+
           make tools/install -j"$(nproc)" || make tools/install -j1 V=s || {
             echo "❌ tools 编译失败"
             exit 1
           }
           echo "✅ tools 编译完成"
+
           make toolchain/install -j"$(nproc)" || make toolchain/install -j1 V=s || {
             echo "❌ toolchain 编译失败"
             exit 1
           }
           echo "✅ toolchain 编译完成"
+
           echo "need_build=true" >> "$GITHUB_OUTPUT"
           echo "need_save_cache=true" >> "$GITHUB_OUTPUT"
           echo "need_save_release=true" >> "$GITHUB_OUTPUT"
         fi
+
         # 修改 Makefile，确保后续 make 跳过工具链重编
         sed -i 's/ $(tool.*\/stamp-compile)//' Makefile
         echo "📌 Makefile 已修改，后续编译将跳过工具链"
+
     # =========================================================
     # 5.10 保存 Toolchain 到 actions/cache
     # - 首次编译后保存
@@ -353,6 +434,7 @@ jobs:
           /workdir/openwrt/staging_dir/host*
           /workdir/openwrt/staging_dir/tool*
         key: ${{ steps.cache-key.outputs.CACHE_KEY }}
+
     # =========================================================
     # 5.11 保存 Toolchain 到 Release 备份
     # 仅首次编译工具链时执行
@@ -363,12 +445,16 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         cd openwrt
+
         CACHE_KEY="${{ steps.cache-key.outputs.CACHE_KEY }}"
         CACHE_PREFIX="${{ steps.cache-key.outputs.CACHE_PREFIX }}"
+
         echo "📦 打包工具链..."
         tar -I zstdmt -cf "${CACHE_KEY}.tzst" staging_dir/host* staging_dir/tool*
         ls -lh "${CACHE_KEY}.tzst"
+
         echo "📍 Release 目标仓库: $GITHUB_REPOSITORY"
+
         if ! gh release view toolchain-cache --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
           echo "📝 创建 toolchain-cache Release..."
           gh release create toolchain-cache \
@@ -377,6 +463,7 @@ jobs:
             --notes "自动生成的工具链缓存，请勿手动删除" \
             --latest=false
         fi
+
         # 删除同平台旧缓存，避免 Release 越积越多
         gh release view toolchain-cache \
           --repo "$GITHUB_REPOSITORY" \
@@ -388,18 +475,22 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               -y 2>/dev/null || true
           done
+
         echo "📤 上传到 Release..."
         gh release upload toolchain-cache "${CACHE_KEY}.tzst" \
           --repo "$GITHUB_REPOSITORY" \
           --clobber
+
         rm -f "${CACHE_KEY}.tzst"
         echo "✅ 工具链已备份到 Release"
+
     # =========================================================
     # 6. SSH 调试（可选）
     # =========================================================
     - name: SSH connection to Actions
       uses: mxschmitt/action-tmate@v3
       if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh != 'false') || contains(github.event.action, 'ssh')
+
     # =========================================================
     # 7. 下载软件包
     # =========================================================
@@ -411,6 +502,7 @@ jobs:
         make download -j8 || make download -j1 V=s
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
+
     # =========================================================
     # 8. 编译固件
     # =========================================================
@@ -418,8 +510,10 @@ jobs:
       id: compile
       run: |
         cd openwrt
+
         echo "开始编译... ($(nproc) 线程)"
         df -hT /
+
         if make -j"$(nproc)"; then
           echo "多线程编译成功"
         else
@@ -438,19 +532,23 @@ jobs:
             fi
           fi
         fi
+
         echo "========================================"
         echo "固件编译完成"
         echo "最终磁盘空间:"
         df -hT /
         echo "========================================"
+
         echo "status=success" >> "$GITHUB_OUTPUT"
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> "$GITHUB_ENV"
+
     # =========================================================
     # 8.5 空间检查
     # =========================================================
     - name: Check space usage
       if: (!cancelled())
       run: df -hT
+
     # =========================================================
     # 9. 上传 bin 目录（Artifacts）
     # =========================================================
@@ -460,6 +558,7 @@ jobs:
       with:
         name: OpenWrt_bin_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: openwrt/bin
+
     # =========================================================
     # 10. 整理固件文件
     # =========================================================
@@ -469,6 +568,7 @@ jobs:
       run: |
         cd openwrt/bin/targets/*/*
         rm -rf packages
+
         # 关键防呆：没有本机型的 sysupgrade 固件就绝不发布
         # （此前编译失败后仍会执行到这里，把 bl2 等 .bin 当固件发到 Release）
         IMG=$(ls -1 ./*umi_uax3000e*sysupgrade.bin 2>/dev/null | head -n 1)
@@ -478,14 +578,17 @@ jobs:
           exit 1
         fi
         echo "✅ 待发布固件: $IMG"
+
         echo "FIRMWARE=$PWD" >> "$GITHUB_ENV"
         echo "status=success" >> "$GITHUB_OUTPUT"
+
     - name: Upload firmware directory
       uses: actions/upload-artifact@v5
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
         name: OpenWrt_firmware_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
+
     # =========================================================
     # 11. 生成发布标签和日志
     # =========================================================
@@ -497,9 +600,12 @@ jobs:
         DEVICE_NAME="${{ env.DEVICE_NAME }}"
         BRANCH="${{ env.REPO_BRANCH }}"
         BUILD_TIME=$(date +"%Y%m%d-%H%M")
+
         RELEASE_TAG="${DEVICE_NAME}-${AUTHOR}-${BRANCH}-${BUILD_TIME}"
         RELEASE_TAG=$(echo "$RELEASE_TAG" | sed 's/[^a-zA-Z0-9._-]/-/g')
+
         echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+
         touch release.txt
         echo "## 🚀 OpenWrt 自动编译固件" >> release.txt
         echo "" >> release.txt
@@ -515,7 +621,9 @@ jobs:
         echo "" >> release.txt
         echo "---" >> release.txt
         echo "> ⚠️ **注意**: 请根据自己的机型选择对应的 Factory 或 Sysupgrade 固件" >> release.txt
+
         echo "status=success" >> "$GITHUB_OUTPUT"
+
     # =========================================================
     # 12. 发布到 GitHub Release
     # =========================================================
@@ -533,6 +641,7 @@ jobs:
           ${{ env.FIRMWARE }}/*umi_uax3000e*.manifest
           ${{ env.FIRMWARE }}/*umi_uax3000e*.img.gz
           ${{ env.FIRMWARE }}/*umi_uax3000e*.tar.gz
+
     # =========================================================
     # 13. 清理旧的工作流记录
     # =========================================================
@@ -542,6 +651,7 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
         retain_days: 1
         keep_minimum_runs: 10
+
     # =========================================================
     # 14. 清理旧的 Release 发布
     # delete_tag_pattern 只删本设备固件 Release
