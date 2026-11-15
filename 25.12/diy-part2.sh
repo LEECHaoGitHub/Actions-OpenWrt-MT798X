@@ -149,8 +149,8 @@ net.netfilter.nf_conntrack_udp_timeout_stream=120
 # ---------------------------------------------------------
 # TCP 优化
 # ---------------------------------------------------------
-net.core.netdev_max_backlog=2048
-net.core.somaxconn=2048
+net.core.netdev_max_backlog=4096
+net.core.somaxconn=4096
 net.ipv4.tcp_max_syn_backlog=2048
 net.ipv4.tcp_fastopen=3
 net.ipv4.tcp_slow_start_after_idle=0
@@ -162,13 +162,13 @@ net.ipv4.tcp_keepalive_probes=5
 net.ipv4.tcp_max_tw_buckets=8192
 
 # ---------------------------------------------------------
-# 缓冲区（适配 256MB 路由器）
+# 缓冲区（适配 1GB 路由器）
 # ---------------------------------------------------------
-net.core.rmem_max=4194304
-net.core.wmem_max=4194304
-net.ipv4.tcp_rmem=4096 131072 4194304
-net.ipv4.tcp_wmem=4096 65536 4194304
-net.ipv4.udp_mem=8192 12288 16384
+net.core.rmem_max=8388608
+net.core.wmem_max=8388608
+net.ipv4.tcp_rmem=4096 262144 8388608
+net.ipv4.tcp_wmem=4096 131072 8388608
+net.ipv4.udp_mem=16384 24576 32768
 
 # ---------------------------------------------------------
 # 本地端口范围
