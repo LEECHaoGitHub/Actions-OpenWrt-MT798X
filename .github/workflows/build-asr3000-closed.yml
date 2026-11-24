@@ -1,4 +1,5 @@
 name: Build ASR3000 (ImmortalWrt 25.12 / Linux 6.12 / MTK closed)
+
 on:
   workflow_dispatch:
     inputs:
@@ -53,8 +54,10 @@ on:
   push:
     tags:
       - "asr3000-closed-*"
+
 permissions:
   contents: write
+
 env:
   REPO_URL: https://github.com/chasey-dev/immortalwrt-mt798x-rebase.git
   REPO_BRANCH: "25.12"
@@ -71,13 +74,16 @@ env:
   OPT_SQM: ${{ github.event.inputs.sqm }}
   OPT_TTYD: ${{ github.event.inputs.ttyd }}
   OPT_ARGON: ${{ github.event.inputs.argon }}
+
 jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 360
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Free disk space
         uses: jlumbroso/free-disk-space@main
         with:
@@ -88,6 +94,7 @@ jobs:
           large-packages: true
           docker-images: true
           swap-storage: false
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -95,30 +102,41 @@ jobs:
             build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
             gettext git libncurses-dev libelf-dev libssl-dev python3 python3-setuptools \
             rsync swig unzip zlib1g-dev file wget bc cpio dwarves
+
       - name: Clone ImmortalWrt MT798x (25.12)
         run: |
           git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" openwrt
           cd openwrt
           echo "src-git honk $HONK_FEED" >> feeds.conf.default
+
+      - name: Patch ASR3000 stock image recipes
+        run: |
+          python3 "$GITHUB_WORKSPACE/25.12/asr3000/patch-images.py" \
+            openwrt/target/linux/mediatek/image/filogic.mk
+
       - name: Update and install feeds
         run: |
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+
       - name: Prepare files overlay
         run: |
           mkdir -p openwrt/files
           cp -a 25.12/asr3000/files/. openwrt/files/
           chmod 0755 openwrt/files/etc/uci-defaults/*
+
       - name: Generate .config
         run: |
           cd openwrt
           cp ../25.12/mt7981-25.12-abt_asr3000.config .config
+
           add_pkg() {
             for p in "$@"; do
               grep -q "^CONFIG_PACKAGE_${p}=y$" .config || echo "CONFIG_PACKAGE_${p}=y" >> .config
             done
           }
+
           [ "$OPT_PASSWALL" = "true" ] && add_pkg luci-app-passwall
           [ "$OPT_OPENCLASH" = "true" ] && add_pkg luci-app-openclash
           [ "$OPT_SMARTDNS" = "true" ] && add_pkg luci-app-smartdns smartdns
@@ -131,7 +149,9 @@ jobs:
           [ "$OPT_SQM" = "true" ] && add_pkg luci-app-sqm sqm-scripts
           [ "$OPT_TTYD" = "true" ] && add_pkg luci-app-ttyd ttyd
           [ "$OPT_ARGON" = "true" ] && add_pkg luci-theme-argon
+
           make defconfig
+
           for sym in \
             CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_abt_asr3000 \
             CONFIG_PACKAGE_kmod-mt_wifi \
@@ -141,25 +161,32 @@ jobs:
             grep -q "^$sym=y" .config || { echo "缺少 $sym"; exit 1; }
           done
           echo "配置校验通过"
+
       - name: Prepare prebuilt honk-core
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd openwrt
+
           if ! grep -q '^CONFIG_PACKAGE_honk=y' .config; then
             echo "honk 未选中，跳过"
             exit 0
           fi
+
           PKG_DIR="feeds/honk/honk"
           [ -f "$PKG_DIR/Makefile" ] || { echo "找不到 $PKG_DIR/Makefile"; exit 1; }
+
           VER=$(sed -n 's/^PKG_VERSION:=//p' "$PKG_DIR/Makefile" | head -n 1)
           REL=$(sed -n 's/^PKG_RELEASE:=//p' "$PKG_DIR/Makefile" | head -n 1)
           VER_DOT=${VER//\~/.}
           VER_TAG=${VER//\~/_}
           echo "honk 版本: $VER (r$REL)"
+          echo "HONK_VER=$VER" >> "$GITHUB_ENV"
+
           TAG="honk_${VER_TAG}-r${REL}"
           ASSET="honk_${VER_DOT}-r${REL}_aarch64_generic-openwrt-24.10.8.ipk"
           URL="https://github.com/QiuSimons/luci-app-honk/releases/download/${TAG}/${ASSET}"
+
           if ! curl -fsSL --retry 3 --retry-delay 5 -o /tmp/honk.ipk "$URL"; then
             echo "直接下载失败，用 API 找同版本 asset"
             URL=$(gh api "repos/QiuSimons/luci-app-honk/releases?per_page=30" \
@@ -168,42 +195,84 @@ jobs:
             [ -n "$URL" ] || { echo "找不到 $VER 的 aarch64 包"; exit 1; }
             curl -fsSL --retry 5 --retry-delay 5 -o /tmp/honk.ipk "$URL"
           fi
+
           rm -rf /tmp/honk-extract && mkdir -p /tmp/honk-extract
           if tar -tzf /tmp/honk.ipk >/dev/null 2>&1; then
             tar -xzf /tmp/honk.ipk -C /tmp/honk-extract
           else
             ( cd /tmp/honk-extract && ar x /tmp/honk.ipk )
           fi
+
           DATA=$(find /tmp/honk-extract -name data.tar.gz | head -n 1)
           [ -n "$DATA" ] || { echo "包内没有 data.tar.gz"; exit 1; }
           tar -xzf "$DATA" -C /tmp/honk-extract
+
           BIN=$(find /tmp/honk-extract -type f -name honk-core | head -n 1)
           [ -n "$BIN" ] || { echo "包内没有 honk-core"; exit 1; }
           file "$BIN" | grep -q 'aarch64' || { echo "honk-core 不是 aarch64"; file "$BIN"; exit 1; }
+
           install -m 0755 "$BIN" "$PKG_DIR/files/honk-core.bin"
           rm -f "$PKG_DIR/files/honk-core.bin.stamp"
           echo "已放置预编译 honk-core"
+
       - name: Download packages
         run: |
           cd openwrt
           make download -j8 || make download -j1 V=s
+
       - name: Build firmware
         run: |
           cd openwrt
           make -j"$(nproc)" || make -j1 V=s
-      - name: Collect artifacts
+
+      - name: Organize firmware
         run: |
-          mkdir -p output
-          find openwrt/bin/targets/mediatek/filogic -maxdepth 1 -type f -name '*asr3000*' -exec cp -v {} output/ \;
-          ls -lh output
-      - name: Upload artifact
+          mkdir -p "$GITHUB_WORKSPACE/firmware"
+          cd openwrt/bin/targets/mediatek/filogic
+          rm -rf packages
+          ls -lh
+          cp -v *abt_asr3000* "$GITHUB_WORKSPACE/firmware/" || true
+          cd "$GITHUB_WORKSPACE/firmware"
+          ls -lh
+          ls -1 *abt_asr3000*sysupgrade.bin >/dev/null 2>&1 || {
+            echo "❌ 没有生成 stock 布局的 sysupgrade.bin"; exit 1; }
+          ls -1 *abt_asr3000*factory.bin >/dev/null 2>&1 || {
+            echo "❌ 没有生成 stock 布局的 factory.bin"; exit 1; }
+          sha256sum * > sha256sums
+          echo "FIRMWARE=$PWD" >> "$GITHUB_ENV"
+
+      - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
         with:
           name: asr3000-immortalwrt-25.12-closed
-          path: output/*
+          path: ${{ env.FIRMWARE }}/*
           if-no-files-found: error
-      - name: Release (tag only)
-        if: startsWith(github.ref, 'refs/tags/')
+
+      - name: Generate release notes
+        id: release_meta
+        run: |
+          SOURCE_SHA=$(git -C openwrt rev-parse --short HEAD)
+          KERNEL_VER=$(sed -n 's/^KERNEL_PATCHVER:=//p' openwrt/target/linux/mediatek/Makefile | head -n 1)
+          REL_TAG="asr3000-closed-${KERNEL_VER}-$(date +%Y%m%d-%H%M%S)"
+          HONK_VER="${HONK_VER:-unknown}"
+
+          echo "REL_TAG=$REL_TAG" >> "$GITHUB_ENV"
+          echo "SOURCE_SHA=$SOURCE_SHA" >> "$GITHUB_ENV"
+          echo "KERNEL_VER=$KERNEL_VER" >> "$GITHUB_ENV"
+
+          python3 "$GITHUB_WORKSPACE/25.12/asr3000/release-notes.py" > release-notes.md
+          cat release-notes.md
+
+      - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: output/*
+          tag_name: ${{ env.REL_TAG }}
+          name: "ASR3000 closed 25.12 Linux ${{ env.KERNEL_VER }} ${{ env.SOURCE_SHA }}"
+          body_path: release-notes.md
+          fail_on_unmatched_files: false
+          files: |
+            ${{ env.FIRMWARE }}/*abt_asr3000*factory.bin
+            ${{ env.FIRMWARE }}/*abt_asr3000*sysupgrade.bin
+            ${{ env.FIRMWARE }}/*abt_asr3000*sysupgrade.itb
+            ${{ env.FIRMWARE }}/*abt_asr3000*.manifest
+            ${{ env.FIRMWARE }}/sha256sums
