@@ -182,3 +182,45 @@ echo "✅ 网络优化参数已写入"
 sed -i 's/192.168.1.1/192.168.30.1/g' package/base-files/files/bin/config_generate
 
 echo "✅ SSH2 配置完成。"
+
+# =========================================================
+# 6. honk：注入上游预编译 honk-core（aarch64 musl 静态 full 版）
+#
+# 背景：QiuSimons 的 honk 包在编译阶段调用 build_honk_core.sh 现场构建
+# honk-core，需要 rust + zig + bpf-linker；而它靠解析上游 release.yml 中
+# setup-zig 的 version 来定 zig 版本。上游 2026-11-26 的提交
+# (2a23ce8) 已经把 setup-zig 从 release.yml 里去掉，于是 honk_toolchain.sh
+# 报 "ERROR: no setup-zig version in ..."，连同 eval 失败导致
+# "HONK_SRC_URL: unbound variable"，整个 Compile the firmware 步骤失败。
+#
+# 做法：放一份没有 .stamp 的预编译二进制到 files/honk-core.bin，
+# build_honk_core.sh --if-needed 会识别为 prebuilt 并直接返回，跳过源码构建。
+# =========================================================
+HONK_PKG="package/custom/daed-honk/honk"
+HONK_REL="v0.1.0-beta.7"
+HONK_TAR="honk-core-${HONK_REL}-aarch64-unknown-linux-musl-full.tar.gz"
+HONK_URL="https://github.com/daeuniverse/honk/releases/download/${HONK_REL}/${HONK_TAR}"
+
+if [ -d "$HONK_PKG" ] && grep -q "CONFIG_PACKAGE_luci-app-honk=y" "${GITHUB_WORKSPACE:-..}/${CONFIG_FILE:-25.12/mt7981-25.12.config}" 2>/dev/null; then
+    echo ">>> 注入预编译 honk-core (${HONK_REL} aarch64-musl-full)"
+    TMP_HONK="$(mktemp -d)"
+    if ! curl -fL --retry 3 --connect-timeout 20 "$HONK_URL" -o "$TMP_HONK/honk.tar.gz"; then
+        echo "❌ honk 预编译包下载失败: $HONK_URL"
+        rm -rf "$TMP_HONK"
+        exit 1
+    fi
+    tar -xzf "$TMP_HONK/honk.tar.gz" -C "$TMP_HONK"
+    HONK_BIN="$(find "$TMP_HONK" -type f -name 'honk-core*' ! -name '*.tar.gz' | head -n 1)"
+    if [ -n "$HONK_BIN" ]; then
+        install -Dm755 "$HONK_BIN" "$HONK_PKG/files/honk-core.bin"
+        rm -f "$HONK_PKG/files/honk-core.bin.stamp"
+        echo "✅ honk-core 已注入: $(ls -lh "$HONK_PKG/files/honk-core.bin" | awk '{print $5}')"
+    else
+        echo "❌ 压缩包内未找到 honk-core 可执行文件"
+        rm -rf "$TMP_HONK"
+        exit 1
+    fi
+    rm -rf "$TMP_HONK"
+fi
+
+echo "✅ diy-part2.sh 全部完成。"
