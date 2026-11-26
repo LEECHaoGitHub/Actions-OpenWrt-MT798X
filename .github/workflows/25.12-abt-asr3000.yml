@@ -119,6 +119,12 @@ jobs:
         for f in *-sysupgrade.itb *-recovery.itb *.manifest *.sha256sums; do
           if [ -f "$f" ]; then cp -v "$f" /workdir/firmware/; fi
         done
+        # uboot webui 按内容识别镜像，但页面上的文件选择器只让挑 .bin/.tar，
+        # 因此额外提供一份扩展名为 .bin 的同内容副本（FIT 镜像，不是 tar）
+        itb=$(ls *-sysupgrade.itb 2>/dev/null | head -n1)
+        if [ -n "$itb" ]; then
+          cp -v "$itb" "/workdir/firmware/${itb%.itb}.bin"
+        fi
         cat > /workdir/release-notes.md <<'NOTES'
         ## ABT ASR3000 (MT7981) · immortalwrt 25.12
 
@@ -126,9 +132,20 @@ jobs:
         - 代理：仅 luci-app-honk（预编译 honk-core v0.1.0-beta.7 aarch64-musl-full）；dae / daede / momo / nikki / ssr-plus / openclash / homeproxy / passwall / docker 全部关闭
         - 默认管理地址：192.168.30.1
 
-        ### 刷机（hanwckf bl-mt798x 的 uboot 吃不了 .itb，只认 tar/.bin）
-        1. uboot 后台 192.168.1.1 进 TFTP 恢复模式，加载 *-initramfs-recovery.itb 进入临时系统；
-        2. 浏览器打开临时系统，系统 → 备份与升级，刷 *-sysupgrade.itb（不要保留配置）。
+        ### 文件说明
+        - `*-squashfs-sysupgrade.itb` 和 `*-squashfs-sysupgrade.bin` 是**同一个 FIT 镜像**，只是扩展名不同。
+          这块板整个 flash 只有一个 ubi 分区、卷名 `fit`，uboot 必须把完整 FIT 写进该卷，
+          所以固件本体只能是 FIT；`.bin` 只是为了绕过 webui 文件选择器的扩展名限制。
+        - `*-recovery.itb` 是临时 RAM 系统，只在救砖时用，不能当升级包。
+
+        ### 刷机（hanwckf bl-mt798x uboot，2023.07 及以后支持 fit 卷）
+        1. 断电 → 按住 RESET → 插电 → 保持 15 秒后松开；
+        2. 电脑网卡设静态 192.168.1.100，网线接 LAN，浏览器打开 http://192.168.1.1；
+        3. 上传 `*-squashfs-sysupgrade.bin`（或 `.itb`）→ 开始刷机，等待自动重启；
+        4. 网卡改回 DHCP，系统地址 192.168.30.1。
+
+        若 webui 提示不支持该镜像，说明 uboot 是 2022.06 或更早版本（代码里没有写 fit 卷的分支），
+        先升级 uboot：访问 http://192.168.1.1/uboot.html 上传 hanwckf release 的 FIP 文件。
         NOTES
         ls -lh /workdir/firmware/
 
